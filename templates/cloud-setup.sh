@@ -34,6 +34,8 @@ BOOT=/tmp/loop-boot
 rm -rf "$BOOT"
 if git clone --quiet --depth 1 --branch "$ORCHESTRATOR_REF" "$ORCHESTRATOR" "$BOOT"; then
   bash "$BOOT/scripts/cloud-skill-sync.sh" "$BOOT" ${SKILL_SOURCES[@]+"${SKILL_SOURCES[@]}"}
+  # For a routine with its own GitHub App identity; harmless without one. See docs/IDENTITY.md.
+  mkdir -p "$HOME/.loop" && cp "$BOOT/scripts/app-token.sh" "$HOME/.loop/app-token.sh"
 else
   echo "FATAL: could not clone $ORCHESTRATOR at $ORCHESTRATOR_REF; the environment has no skills." | tee -a "$HOME/loop-setup.log"
 fi

@@ -605,9 +605,9 @@ All of these work without knowing what any route does.
   - **GitHub keeps only one waiting run per group.** A third event while one runs and one waits
     replaces the waiting one. Routing takes seconds, so this should be rare.
 - **Who's a maintainer fails closed.** If GitHub's permission check errors, the actor is treated
-  as not a maintainer. **Unverified:** that the workflow's basic token may call the
-  `collaborators/<login>/permission` endpoint. If it can't, every maintainer route stops
-  matching, and the log says why.
+  as not a maintainer. The workflow's basic token can call the
+  `collaborators/<login>/permission` endpoint: a maintainer-only route matched on the test
+  repo.
 - **Hop cap** on edges ([section 6](#6-loops-triggering-loops)).
 - **No untrusted text in prompts** ([section 5](#5-the-prompt)).
 - **A broken config fails loudly** ([section 3](#3-the-config)).
@@ -649,4 +649,5 @@ The [example](../examples/triage/) shows one repo's answers.
    through the Claude app. `routine_login` and `addressed_with` make that safe. A dedicated
    identity (a GitHub App or a machine user) would put its comments under its own name and allow
    mentions. **Unverified:** how a hosted routine is given its own GitHub credentials
-   ([`templates/routine.md`](../templates/routine.md#if-those-permissions-are-too-much-or-you-want-a-real-bot)).
+   ([`IDENTITY.md`](IDENTITY.md) compares the options; `scripts/app-token.sh` makes an app's
+   tokens, tested against a stand-in, not yet a real app).

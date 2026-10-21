@@ -123,40 +123,13 @@ and its stored prompt, not by the app.
 
 ### If those permissions are too much, or you want a real bot
 
-Give the routine its own identity. That also means its comments no longer sit under your name,
-and `@`-mention routes (`mentions`) become an option alongside 🤖. Either one works with the
-orchestrator:
+Give the routine its own identity: your own GitHub App, which posts as `your-app[bot]`, or a
+machine user. Both also take the routine's comments out from under your name.
+[`docs/IDENTITY.md`](../docs/IDENTITY.md) compares them with the 🤖 prefix, with the pros, cons,
+and setup steps for each. `scripts/app-token.sh` makes the app's tokens.
 
-| Option | What it is | Permissions | Login to add to `bots` |
-|---|---|---|---|
-| **Your own GitHub App** | an app you register, installed only on the loop's repos | only what you pick | `your-app-name[bot]` |
-| **A machine user** | a separate GitHub user, used only by the routine | its role on each repo, plus a token scoped to those repos | its login |
-
-For this loop, the routine needs to read and write **issues** and **pull requests**, read
-**contents**, and, for edges and the ticker, send `repository_dispatch`. GitHub's docs are
-believed to list that last one as contents write; check before you rely on it.
-
-- **Your own GitHub App:** [registering a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app).
-  An app's events show as a bot to GitHub, so the orchestrator ignores them even before you add
-  its login to `bots`.
-- **A machine user:** [GitHub's account types](https://docs.github.com/en/get-started/learning-about-github/types-of-github-accounts),
-  which covers machine users (GitHub's name for an account that automates work). Its events look like a person's to GitHub, so its login **must**
-  be in `bots`, or the orchestrator treats its comments as human. Use a fine-grained token,
-  scoped to the loop's repos, and note its expiry.
-
-**What changes for the routine:** it has to post with that identity's credentials instead of the
-Claude app's, and `routine_login` changes to that identity's login. **Unverified:** how a hosted
-routine is given its own GitHub credentials, such as a token in its environment that its tools
-use, rather than its built-in GitHub connection. Test that first, the same way as below: post
-one comment, and check the author.
-
-**Why not `claude[bot]`?** That name only appears when the Claude app's own token is used, and
-only Anthropic's GitHub Actions integration gets one. It cancels the token when it finishes, so
-a later workflow step can't post with it either.
-
-**What you lose:** other Claude features that use the official app, such as Code Review, still
-need it. Choosing your own identity for this loop doesn't stop you installing the official app
-for those.
+The Claude app stays installed either way, since it's how the routine reaches GitHub at all.
+Other Claude features, such as Code Review, keep using it too.
 
 ### Check whose name the routine posts with
 

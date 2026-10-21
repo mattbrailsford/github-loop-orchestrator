@@ -44,7 +44,7 @@ One side effect: an issue opened from the routine's account isn't triaged on its
 that account's events only count when addressed. Start its body with 🤖 to have it triaged.
 
 If the routine later gets its own account or GitHub App, set `routine_login` to that, and
-nothing else here needs to change ([`templates/routine.md`](../../templates/routine.md#if-those-permissions-are-too-much-or-you-want-a-real-bot)).
+nothing else here needs to change ([`docs/IDENTITY.md`](../../docs/IDENTITY.md)).
 
 ## A separate tracker
 
