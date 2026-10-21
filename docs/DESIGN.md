@@ -600,3 +600,5 @@ The [example](../examples/triage/) shows one repo's answers.
    authenticates to GitHub, and whether it can post as `claude[bot]` through the Claude GitHub
    app. If it can't, the fallback is listing the routine's account in `bots`, which means that
    person's own comments are ignored too.
+   [`templates/routine.md`](../templates/routine.md#check-whose-name-the-routine-posts-with) has
+   a three-step test that answers this on a test repo.

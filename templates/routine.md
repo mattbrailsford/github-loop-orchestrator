@@ -42,6 +42,69 @@ Working rules:
 - If you have to give up, or something needs a person urgently, use /loop-notify. For anything that must not be public, such as a possible security report, call it as private, and post nothing on the issue.
 ```
 
+## Installing the Claude GitHub app
+
+The routine's comments and labels need to come from a bot account, not a person's. The
+orchestrator ignores bot events, so if the routine posts as you, it can't tell your replies from
+its own, and a routine's own comment could match a maintainer route. The Claude GitHub app is
+meant to give it that bot identity: `claude[bot]`.
+
+You need admin access to the repo, or to be an owner, for an organization-wide install.
+
+### Install it
+
+Either way works:
+
+- **From Claude Code:** in a checkout of the repo, run `/install-github-app`. It needs the GitHub
+  CLI, logged in with `gh auth login`. Once the app is installed, it asks whether to continue
+  with GitHub Actions setup: choose **Skip for now**.
+- **From GitHub:** go to https://github.com/apps/claude and install it on the repo, or on the
+  organization with a chosen list of repos. For a split setup, include both the tracker and the
+  code repo.
+
+### Skip the rest of its setup
+
+The app's own setup offers more than the orchestrator needs. Leave out:
+
+- **The `claude.yml` workflow.** It answers `@claude` mentions itself. With the orchestrator also
+  listening, one mention gets two replies.
+- **The `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` secret.** That's for running Claude
+  inside GitHub Actions. The orchestrator fires a hosted routine instead, using `LOOP_FIRE_URL`
+  and `LOOP_FIRE_TOKEN`.
+
+If `/install-github-app` already opened a pull request with workflow files, close it without
+merging.
+
+### What it asks for
+
+GitHub only lets you accept an app's whole permission set, not part of it. The Claude app's set
+is shared by every Claude feature that uses GitHub, so it's broad. It includes read and write on
+**contents, issues, pull requests, workflows, Actions, checks, discussions, and repository
+hooks**, plus read on administration, members, and statuses. The full list is in
+[Claude's docs](https://code.claude.com/docs/en/github-actions#github-app-permissions).
+
+Say that plainly to whoever approves the install. Contents and workflows write together means
+the app can change code and CI. What the routine actually does with it is limited by its tools
+and its stored prompt, not by the app.
+
+### Check whose name the routine posts with
+
+This decides whether the loop can work, so check it before anything else:
+
+1. Install the app on a test repo, and give the routine access to that repo.
+2. Open an issue there, and fire the routine by hand with a prompt like: "Post a comment saying
+   'hello' on issue 1 in owner/test-repo, then stop."
+3. Look at the comment's author.
+
+- **`claude[bot]`:** the loop can tell the routine apart from people. Carry on.
+- **Your own account:** the routine posts with your identity, not the app's. Stop here. Listing
+  your login in `bots` would make the orchestrator ignore your own replies too, so it isn't a
+  fix. This needs a different way for the routine to post, such as a dedicated bot account or a
+  GitHub App of your own, before the loop is safe to run.
+
+**Unverified:** which of the two you'll see. Claude's docs say the GitHub Actions integration
+posts as the app, but don't say what a hosted routine does.
+
 ## Notifications
 
 Some things must reach a person, and some of them must not go on a public issue: a possible

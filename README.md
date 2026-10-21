@@ -90,8 +90,11 @@ label meanings live there, not here.
    A private repo can use GitHub's own timer instead (commented out in the caller template).
    Other tick sources, and where each keeps its token, are in
    [`docs/TICK-SOURCES.md`](docs/TICK-SOURCES.md).
-6. **Install the Claude GitHub app**, so the routine's comments come from `claude[bot]`. Don't add
-   the app's own `@claude` workflow, or a mention gets two replies.
+6. **Install the Claude GitHub app**, so the routine's comments come from `claude[bot]`. Skip its
+   `@claude` workflow and its API key secret, then check whose name the routine actually posts
+   with. All three are in
+   [`templates/routine.md`](templates/routine.md#installing-the-claude-github-app). Do this check
+   first: if the routine posts as you, the loop can't tell you apart from it.
 
 **Separate tracker?** Do steps 2 and 3 in the code repo too, and set `config_repo` in its caller
 to the tracker. Only the tracker has a `loop-orchestrator.yml`. The routine's repos must include
