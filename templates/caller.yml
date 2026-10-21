@@ -3,14 +3,15 @@
 name: loop
 
 on:
+  # unlabeled: when the claim label comes off, any comment it skipped is picked up.
   issues:
-    types: [opened, labeled]
+    types: [opened, labeled, unlabeled]
   issue_comment:
     types: [created]
   # pull_request_target, not pull_request, so PRs from forks still get the secrets.
   # Safe here because the orchestrator never checks out or runs the PR's code.
   pull_request_target:
-    types: [opened, labeled]
+    types: [opened, labeled, unlabeled]
   # loop-edge: one route starting the next. loop-tick: the ticker routine's hourly tick, for
   # schedule routes. Only the hub needs loop-tick; a code repo ignores it.
   repository_dispatch:

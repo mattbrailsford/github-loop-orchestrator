@@ -118,9 +118,18 @@ Once finalized, the quoted line and the "Proposed" line go.
 ## Claiming an issue
 
 The orchestrator claims the issue before firing: it adds `loop/working` (set as `claim.label` in
-the config), and nothing else fires for that issue until the routine removes it, or 30 minutes
-pass. The routine's prompt ends with when to remove it. So the skills don't claim anything
-themselves, and two quick `🤖` comments can't start two runs.
+the config), and no other run starts for that issue until the routine removes it. The routine's
+prompt ends with when to remove it. So the skills don't claim anything themselves.
+
+Every `🤖` comment gets reactions from the workflow, within seconds:
+
+- 👀 when it's received. It either starts a run, or waits for the one already working.
+- 🚀 when its run starts.
+- 😕 if the routine couldn't be started. Comment again to retry.
+
+A comment that waited gets its own run when the claim comes off, through the right route. So two
+quick `🤖` comments mean two runs, one after the other. A second `🤖 approve` finds the issue
+already approved and does nothing.
 
 `state/drafted` is a different thing: it marks an issue as waiting on a maintainer's answer, and
 stays on until they give one.
@@ -211,9 +220,9 @@ know what runs next.
 - [ ] Approving `state/needs-investigation` starts the investigation through the edge.
 - [ ] A test issue that reads like a security report gets no comment and no label, and
       maintainers get one push notification, even if two events fire for it.
-- [ ] Two quick `🤖 approve` comments on one drafted issue produce one run; the second is skipped
-      while `loop/working` is on.
-- [ ] Every comment that starts a run gets a 👀 within seconds.
+- [ ] Every `🤖` comment gets 👀 within seconds, then 🚀 when its run starts.
+- [ ] Two quick `🤖` comments give two runs, one after the other, never two at once.
+- [ ] A run that posts nothing (a security flag) isn't started again when its claim comes off.
 
 ## Before a real tracker
 

@@ -87,3 +87,15 @@ test('a malformed loop-edge is flagged, not routed', () => {
   const e = normalizeEvent('repository_dispatch', { action: 'loop-edge', client_payload: { route: 'x', number: 4 } }, 'acme/tracker');
   assert.ok(e.invalid);
 });
+
+test('a label coming off becomes a release, carrying the label', () => {
+  const e = normalizeEvent('issues', {
+    action: 'unlabeled',
+    repository,
+    sender: { login: 'maint', type: 'User' },
+    label: { name: 'loop/working' },
+    issue: { number: 3, user, labels: [], state: 'open', body: '' },
+  });
+  assert.equal(e.when, 'released');
+  assert.equal(e.label, 'loop/working');
+});

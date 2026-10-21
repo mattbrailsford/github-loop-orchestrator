@@ -40,11 +40,9 @@ const COMMENT_EVENTS = new Set(['issue_comment.created', 'pr_comment.created']);
 const OPENED_EVENTS = new Set(['issues.opened', 'pull_request.opened']);
 const LABELED_EVENTS = new Set(['issues.labeled', 'pull_request.labeled']);
 
-const TOP_KEYS = new Set(['version', 'bots', 'routine_login', 'max_hops', 'code_repo', 'claim', 'acknowledge', 'routes']);
+const TOP_KEYS = new Set(['version', 'bots', 'routine_login', 'max_hops', 'code_repo', 'claim', 'routes']);
 
-export const DEFAULT_CLAIM = { label: 'loop/working', stale_after_minutes: 30 };
-export const REACTIONS = ['+1', '-1', 'laugh', 'confused', 'heart', 'hooray', 'rocket', 'eyes'];
-export const DEFAULT_ACKNOWLEDGE = 'eyes';
+export const DEFAULT_CLAIM = { label: 'loop/working', stale_after_minutes: 60 };
 const ROUTE_KEYS = new Set(['name', 'when', 'if', 'prompt', 'allow_from', 'code_repo', 'cron']);
 const CONDITION_KEYS = new Set([
   'label',
@@ -204,9 +202,6 @@ export function validateConfig(config) {
       }
     }
   }
-  if ('acknowledge' in config && config.acknowledge !== false && !REACTIONS.includes(config.acknowledge)) {
-    errors.push(`acknowledge: must be false or one of ${REACTIONS.join(', ')}`);
-  }
   if ('routine_login' in config && !(typeof config.routine_login === 'string' && LOGIN_RE.test(config.routine_login))) {
     errors.push('routine_login: must be the GitHub login the routine posts as, without "@"');
   }
@@ -288,9 +283,4 @@ export function codeReposOf(config) {
 export function claimOf(config) {
   if (config.claim === false) return null;
   return { ...DEFAULT_CLAIM, ...(config.claim ?? {}) };
-}
-
-export function acknowledgeOf(config) {
-  if (config.acknowledge === false) return null;
-  return config.acknowledge ?? DEFAULT_ACKNOWLEDGE;
 }

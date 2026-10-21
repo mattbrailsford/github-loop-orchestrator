@@ -67,7 +67,8 @@ Giving the routine its own identity instead, such as your own GitHub App, is com
 | How to stop runaway loops | anything about triage, fixes, or releases |
 
 Every action goes to a routine. The orchestrator's only writes are a claim label, so two runs
-never work on one item at once, and a 👀 on the comment that started a run.
+never work on one item at once, and reactions on the comment that asked: 👀 when it's received,
+🚀 when its run starts, 😕 if it couldn't start.
 
 ## Example
 
@@ -128,9 +129,10 @@ github-loop-orchestrator/
 │   ├── loop.yml              # the reusable workflow every repo calls
 │   └── test.yml              # this repo's CI
 ├── bin/
-│   ├── match.mjs             # matches one event, writes the routes and prompts to fire
+│   ├── match.mjs             # matches one event: what could fire, with its prompt
+│   ├── fire.mjs              # claims, reacts, fires, and catches up, one item at a time
 │   └── validate.mjs          # checks a config, converted to JSON
-├── src/                      # config checks, events, mentions, cron, prompts, GitHub calls
+├── src/                      # config, events, mentions, cron, prompts, claims, GitHub calls
 ├── schema/
 │   └── loop-orchestrator.schema.json   # editor help for the config
 ├── scripts/

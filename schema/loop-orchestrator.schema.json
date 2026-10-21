@@ -38,7 +38,7 @@
       "$ref": "#/$defs/repo"
     },
     "claim": {
-      "description": "While a run works on an issue or PR, this label is on it and nothing else fires there. false turns it off.",
+      "description": "While a run works on an issue or PR, this label is on it and nothing else fires there; comments that come in wait their turn. false turns it off.",
       "oneOf": [
         {
           "const": false
@@ -58,32 +58,11 @@
               "type": "integer",
               "minimum": 5,
               "maximum": 1440,
-              "default": 30
+              "default": 60
             }
           }
         }
       ]
-    },
-    "acknowledge": {
-      "description": "The reaction added to the comment that started a run, so people see it was heard. false turns it off.",
-      "oneOf": [
-        {
-          "const": false
-        },
-        {
-          "enum": [
-            "+1",
-            "-1",
-            "laugh",
-            "confused",
-            "heart",
-            "hooray",
-            "rocket",
-            "eyes"
-          ]
-        }
-      ],
-      "default": "eyes"
     },
     "routes": {
       "type": "array",

@@ -10,12 +10,12 @@ bots: ["claude[bot]"]
 routine_login: your-login   # the account the routine posts as; yours, unless it has its own
 max_hops: 5
 
-# While a run works on an issue, this label is on it and nothing else fires there. The routine
-# removes it when done; a run that died is taken over after 30 minutes.
+# While a run works on an issue, this label is on it and nothing else fires there; comments
+# that come in wait their turn. The routine removes it when done. A claim a run never released
+# is cleared after an hour, which has to be longer than your longest run.
 claim:
   label: loop/working
-  stale_after_minutes: 30
-acknowledge: eyes   # 👀 on the comment that started a run
+  stale_after_minutes: 60
 # code_repo: owner/code-repo   # set when this tracker is separate from the code
 
 routes:

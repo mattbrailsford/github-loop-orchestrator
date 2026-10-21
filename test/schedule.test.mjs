@@ -35,7 +35,7 @@ test('a tick and GitHub schedule both become schedule events', () => {
 test('every due route fires, and only those', async () => {
   const r = await run(tick());
   assert.deepEqual(
-    r.fires.map((f) => f.route),
+    r.fires.filter((f) => f.type === 'fire').map((f) => f.route),
     ['morning', 'hourly'],
   );
   assert.match(r.log, /due at 2026-10-19T07:00Z \(tick\): "morning", "hourly"/);
@@ -50,6 +50,7 @@ test('a scheduled prompt fills repo, time, and code repo, and ends with the sche
 
 test('nothing due means no fires', async () => {
   const config = baseConfig({
+    claim: false,
     routes: [{ name: 'weekend', when: 'schedule', cron: '0 7 * * 0,6', prompt: 'x' }],
   });
   const r = await run(tick(), { config });

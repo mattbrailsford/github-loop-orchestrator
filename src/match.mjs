@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_HOPS, acknowledgeOf, claimOf, codeReposOf, labelMatches, validateConfig } from './config.mjs';
+import { DEFAULT_MAX_HOPS, claimOf, codeReposOf, labelMatches, validateConfig } from './config.mjs';
 import { cronDue } from './cron.mjs';
 import { extractAddressedRequest, extractRequest, findAddress, findMention } from './mentions.mjs';
 import { buildPrompt, usesPlaceholder } from './prompt.mjs';
@@ -12,7 +12,14 @@ export class ConfigError extends Error {
 
 const WRITE_LEVELS = new Set(['admin', 'maintain', 'write']);
 const none = (log) => ({ route: null, prompt: '', fires: [], log });
-const one = (fire, log) => ({ route: fire.route, prompt: fire.prompt, fires: [fire], log });
+const one = (fire, log) => ({ route: fire.route ?? null, prompt: fire.prompt ?? '', fires: [fire], log });
+
+// What a fire reacts to: the comment, or the body of a newly opened issue or PR.
+function triggerOf(event) {
+  if (event.commentId) return { type: 'comment', repo: event.repo, id: event.commentId };
+  if (event.when.endsWith('.opened')) return { type: 'issue', repo: event.repo, number: event.number };
+  return null;
+}
 
 export function hourStamp(date) {
   return `${date.toISOString().slice(0, 13)}:00Z`;
@@ -41,6 +48,14 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
     return none('the event is about a repo the hub config does not list');
   }
 
+  // The claim coming off is when comments left for its run get their turn. Which ones, and
+  // whether to fire, is decided in the claim-and-fire step, one item at a time.
+  if (event.when === 'released') {
+    const claim = claimOf(config);
+    if (!claim || lower(event.label) !== lower(claim.label)) return none('a label came off; nothing to do');
+    return one({ type: 'catch-up', item: { repo: event.repo, number: event.number } }, tellNumber('the claim came off; catching up'));
+  }
+
   if (event.when !== 'edge' && event.when !== 'schedule') {
     const bots = new Set((config.bots ?? []).map(lower));
     if (event.senderIsBot || bots.has(lower(event.actor))) return none('the event came from a bot');
@@ -56,7 +71,7 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
     if (lower(workflowRepo) !== hub) return none('a schedule must run in the hub repo');
     const stamp = hourStamp(event.time);
     const due = config.routes.filter((r) => r.when === 'schedule' && cronDue(r.cron, event.time));
-    if (due.length === 0) return none(`no schedule route is due at ${stamp}`);
+    if (due.length === 0 && !claimOf(config)) return none(`no schedule route is due at ${stamp}`);
     const fires = [];
     for (const route of due) {
       const codeRepo = route.code_repo ?? config.code_repo ?? hubRepo;
@@ -70,13 +85,24 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
         event: 'schedule',
         time: stamp,
       };
-      fires.push({ route: route.name, prompt: buildPrompt(route.prompt, values, null, { scheduled: true }) });
+      fires.push({
+        type: 'fire',
+        route: route.name,
+        prompt: buildPrompt(route.prompt, values, null, { scheduled: true }),
+        item: null,
+        claim: null,
+        edge: false,
+        trigger: null,
+      });
     }
+    // Each tick also clears claims a run left behind, so comments waiting on them get their turn.
+    if (claimOf(config)) fires.push({ type: 'sweep' });
+    const named = fires.filter((f) => f.route).map((f) => `"${f.route}"`);
     return {
-      route: fires[0].route,
-      prompt: fires[0].prompt,
+      route: fires[0].route ?? null,
+      prompt: fires[0].prompt ?? '',
       fires,
-      log: `due at ${stamp} (${event.source}): ${fires.map((f) => `"${f.route}"`).join(', ')}`,
+      log: named.length ? `due at ${stamp} (${event.source}): ${named.join(', ')}` : `no schedule route is due at ${stamp}`,
     };
   }
 
@@ -167,39 +193,20 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
           ? extractAddressedRequest(mentionText(), c.addressed_with)
           : null;
 
-    // Claims are checked against the item's labels now, not as the event saw them: an earlier
-    // routing job may have claimed it since.
+    // Whether the claim is free is checked in the claim-and-fire step, which runs one at a time
+    // per item, against the item's labels as they are then.
     const claim = claimOf(config);
-    let note = '';
-    if (claim && event.when !== 'edge') {
-      const now = (await lookup.issue(event.repo, event.number)) ?? event;
-      if (now.labels.some((l) => lower(l) === lower(claim.label))) {
-        const age = await lookup.labelAge(event.repo, event.number, claim.label);
-        if (age === null || age < claim.stale_after_minutes) {
-          const when = age === null ? '' : `, ${Math.round(age)} min ago`;
-          return none(tellNumber(`matched route "${route.name}", but another run holds the claim${when}; skipped`));
-        }
-        note = `; took over a claim left for ${Math.round(age)} min`;
-      }
-    }
-
-    const reaction = acknowledgeOf(config);
-    const ack = !reaction
-      ? null
-      : event.commentId
-        ? { path: `repos/${event.repo}/issues/comments/${event.commentId}/reactions`, content: reaction }
-        : event.when.endsWith('.opened')
-          ? { path: `repos/${event.repo}/issues/${event.number}/reactions`, content: reaction }
-          : null;
-
     return one(
       {
+        type: 'fire',
         route: route.name,
         prompt: buildPrompt(route.prompt, values, request, { claim }),
-        claim: claim ? { repo: event.repo, number: event.number, label: claim.label } : null,
-        ack,
+        item: { repo: event.repo, number: event.number },
+        claim: claim ? { repo: event.repo, number: event.number, label: claim.label, stale_after_minutes: claim.stale_after_minutes } : null,
+        edge: event.when === 'edge',
+        trigger: triggerOf(event),
       },
-      tellNumber(`matched route "${route.name}"${note}`),
+      tellNumber(`matched route "${route.name}"`),
     );
   }
 

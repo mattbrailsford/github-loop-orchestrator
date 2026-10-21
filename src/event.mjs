@@ -60,11 +60,15 @@ export function normalizeEvent(eventName, payload, workflowRepo, now = new Date(
   if (name === 'repository_dispatch' && payload.action === 'loop-tick') return scheduled(workflowRepo, now, 'tick');
 
   if (name === 'issues') {
+    if (payload.action === 'unlabeled') return { ...fromItem(payload, payload.issue, 'issue', 'released'), source: 'issues' };
     if (!['opened', 'labeled'].includes(payload.action)) return null;
     return fromItem(payload, payload.issue, 'issue', `issues.${payload.action}`);
   }
 
   if (name === 'pull_request') {
+    if (payload.action === 'unlabeled') {
+      return { ...fromItem(payload, payload.pull_request, 'pr', 'released'), source: 'pull_request' };
+    }
     if (!['opened', 'labeled'].includes(payload.action)) return null;
     return fromItem(payload, payload.pull_request, 'pr', `pull_request.${payload.action}`);
   }
