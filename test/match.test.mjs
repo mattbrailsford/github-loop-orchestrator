@@ -11,7 +11,7 @@ test('a new issue matches the first route, with placeholders filled', async () =
   const r = await run(issueEvent());
   assert.equal(r.route, 'new-issue');
   assert.ok(r.prompt.startsWith(`Triage ${HUB}#7. Code in ${HUB}. Route: new-issue.`));
-  assert.ok(r.prompt.endsWith(RECHECK));
+  assert.ok(r.prompt.includes(RECHECK));
 });
 
 test('conditions that fail fall through to no match', async () => {

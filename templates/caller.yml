@@ -21,10 +21,11 @@ on:
   # schedule:
   #   - cron: "0 * * * *"
 
+# Write, so the orchestrator can add the claim label and the 👀 reaction. It writes nothing else.
 permissions:
   contents: read
-  issues: read
-  pull-requests: read
+  issues: write
+  pull-requests: write
 
 jobs:
   loop:

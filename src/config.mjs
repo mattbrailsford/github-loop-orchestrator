@@ -40,7 +40,11 @@ const COMMENT_EVENTS = new Set(['issue_comment.created', 'pr_comment.created']);
 const OPENED_EVENTS = new Set(['issues.opened', 'pull_request.opened']);
 const LABELED_EVENTS = new Set(['issues.labeled', 'pull_request.labeled']);
 
-const TOP_KEYS = new Set(['version', 'bots', 'routine_login', 'max_hops', 'code_repo', 'routes']);
+const TOP_KEYS = new Set(['version', 'bots', 'routine_login', 'max_hops', 'code_repo', 'claim', 'acknowledge', 'routes']);
+
+export const DEFAULT_CLAIM = { label: 'loop/working', stale_after_minutes: 30 };
+export const REACTIONS = ['+1', '-1', 'laugh', 'confused', 'heart', 'hooray', 'rocket', 'eyes'];
+export const DEFAULT_ACKNOWLEDGE = 'eyes';
 const ROUTE_KEYS = new Set(['name', 'when', 'if', 'prompt', 'allow_from', 'code_repo', 'cron']);
 const CONDITION_KEYS = new Set([
   'label',
@@ -185,6 +189,24 @@ export function validateConfig(config) {
   if ('code_repo' in config && !(typeof config.code_repo === 'string' && REPO_RE.test(config.code_repo))) {
     errors.push('code_repo: must be "owner/name"');
   }
+  if ('claim' in config && config.claim !== false) {
+    const c = config.claim;
+    if (!isObject(c)) errors.push('claim: must be false, or a map with label and stale_after_minutes');
+    else {
+      for (const key of Object.keys(c)) {
+        if (!['label', 'stale_after_minutes'].includes(key)) errors.push(`claim: unknown key "${key}"`);
+      }
+      if ('label' in c && !(typeof c.label === 'string' && c.label.length > 0 && c.label.length <= 50 && !c.label.includes('*'))) {
+        errors.push('claim.label: must be a label name, without "*"');
+      }
+      if ('stale_after_minutes' in c && !(Number.isInteger(c.stale_after_minutes) && c.stale_after_minutes >= 5 && c.stale_after_minutes <= 1440)) {
+        errors.push('claim.stale_after_minutes: must be a whole number from 5 to 1440');
+      }
+    }
+  }
+  if ('acknowledge' in config && config.acknowledge !== false && !REACTIONS.includes(config.acknowledge)) {
+    errors.push(`acknowledge: must be false or one of ${REACTIONS.join(', ')}`);
+  }
   if ('routine_login' in config && !(typeof config.routine_login === 'string' && LOGIN_RE.test(config.routine_login))) {
     errors.push('routine_login: must be the GitHub login the routine posts as, without "@"');
   }
@@ -261,4 +283,14 @@ export function codeReposOf(config) {
   if (config.code_repo) repos.add(config.code_repo.toLowerCase());
   for (const route of config.routes) if (route.code_repo) repos.add(route.code_repo.toLowerCase());
   return repos;
+}
+
+export function claimOf(config) {
+  if (config.claim === false) return null;
+  return { ...DEFAULT_CLAIM, ...(config.claim ?? {}) };
+}
+
+export function acknowledgeOf(config) {
+  if (config.acknowledge === false) return null;
+  return config.acknowledge ?? DEFAULT_ACKNOWLEDGE;
 }

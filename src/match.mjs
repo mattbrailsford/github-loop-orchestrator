@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_HOPS, codeReposOf, labelMatches, validateConfig } from './config.mjs';
+import { DEFAULT_MAX_HOPS, acknowledgeOf, claimOf, codeReposOf, labelMatches, validateConfig } from './config.mjs';
 import { cronDue } from './cron.mjs';
 import { extractAddressedRequest, extractRequest, findAddress, findMention } from './mentions.mjs';
 import { buildPrompt, usesPlaceholder } from './prompt.mjs';
@@ -12,7 +12,7 @@ export class ConfigError extends Error {
 
 const WRITE_LEVELS = new Set(['admin', 'maintain', 'write']);
 const none = (log) => ({ route: null, prompt: '', fires: [], log });
-const one = (route, prompt, log) => ({ route, prompt, fires: [{ route, prompt }], log });
+const one = (fire, log) => ({ route: fire.route, prompt: fire.prompt, fires: [fire], log });
 
 export function hourStamp(date) {
   return `${date.toISOString().slice(0, 13)}:00Z`;
@@ -167,7 +167,40 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
           ? extractAddressedRequest(mentionText(), c.addressed_with)
           : null;
 
-    return one(route.name, buildPrompt(route.prompt, values, request), tellNumber(`matched route "${route.name}"`));
+    // Claims are checked against the item's labels now, not as the event saw them: an earlier
+    // routing job may have claimed it since.
+    const claim = claimOf(config);
+    let note = '';
+    if (claim && event.when !== 'edge') {
+      const now = (await lookup.issue(event.repo, event.number)) ?? event;
+      if (now.labels.some((l) => lower(l) === lower(claim.label))) {
+        const age = await lookup.labelAge(event.repo, event.number, claim.label);
+        if (age === null || age < claim.stale_after_minutes) {
+          const when = age === null ? '' : `, ${Math.round(age)} min ago`;
+          return none(tellNumber(`matched route "${route.name}", but another run holds the claim${when}; skipped`));
+        }
+        note = `; took over a claim left for ${Math.round(age)} min`;
+      }
+    }
+
+    const reaction = acknowledgeOf(config);
+    const ack = !reaction
+      ? null
+      : event.commentId
+        ? { path: `repos/${event.repo}/issues/comments/${event.commentId}/reactions`, content: reaction }
+        : event.when.endsWith('.opened')
+          ? { path: `repos/${event.repo}/issues/${event.number}/reactions`, content: reaction }
+          : null;
+
+    return one(
+      {
+        route: route.name,
+        prompt: buildPrompt(route.prompt, values, request, { claim }),
+        claim: claim ? { repo: event.repo, number: event.number, label: claim.label } : null,
+        ack,
+      },
+      tellNumber(`matched route "${route.name}"${note}`),
+    );
   }
 
   if (fromRoutine) return none(tellNumber("ignored: from the routine's own account, and not addressed to it"));

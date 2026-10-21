@@ -88,21 +88,41 @@ jobs:
             --hub "$HUB"
 
       # Usually one fire. A schedule fires once per route that's due, and one failing doesn't
-      # stop the rest. A retried fire is safe: the prompt tells the routine to re-check and
-      # stop quietly if the work is already done.
-      - name: Fire the routine
+      # stop the rest. For each fire: react to the triggering comment, claim the item with its
+      # label, fire, and take the claim back off if the fire failed. The reaction and label are
+      # made with the workflow's own token, whose actions never start another workflow run.
+      # A retried fire is safe: the prompt tells the routine to re-check and stop quietly if the
+      # work is already done.
+      - name: Claim, acknowledge, and fire the routine
         if: steps.match.outputs.count != '0' && steps.match.outputs.count != ''
         env:
           FIRE_URL: ${{ secrets.LOOP_FIRE_URL }}
           TOKEN: ${{ secrets.LOOP_FIRE_TOKEN }}
           FIRES: ${{ steps.match.outputs.fires }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           failed=0
           count="$(jq length <<<"$FIRES")"
           for i in $(seq 0 $((count - 1))); do
-            route="$(jq -r ".[$i].route" <<<"$FIRES")"
-            if jq -c "{text: .[$i].prompt}" <<<"$FIRES" | \
+            fire="$(jq -c ".[$i]" <<<"$FIRES")"
+            route="$(jq -r '.route' <<<"$fire")"
+
+            ack_path="$(jq -r '.ack.path // empty' <<<"$fire")"
+            if [ -n "$ack_path" ]; then
+              gh api -X POST "$ack_path" -f content="$(jq -r '.ack.content' <<<"$fire")" >/dev/null 2>&1 \
+                || echo "::warning::couldn't add the reaction for route \"$route\""
+            fi
+
+            claim_repo="$(jq -r '.claim.repo // empty' <<<"$fire")"
+            claim_number="$(jq -r '.claim.number // empty' <<<"$fire")"
+            claim_label="$(jq -r '.claim.label // empty' <<<"$fire")"
+            if [ -n "$claim_label" ]; then
+              gh api -X POST "repos/$claim_repo/issues/$claim_number/labels" -f "labels[]=$claim_label" >/dev/null 2>&1 \
+                || echo "::warning::couldn't add the claim label for route \"$route\"; firing without a claim"
+            fi
+
+            if jq -c '{text: .prompt}' <<<"$fire" | \
               curl -sS -X POST "$FIRE_URL" \
                 -H "Authorization: Bearer ${TOKEN}" \
                 -H "anthropic-version: 2023-06-01" \
@@ -116,6 +136,12 @@ jobs:
             else
               echo "::error::could not fire the routine for route \"$route\""
               failed=1
+              if [ -n "$claim_label" ]; then
+                encoded="$(jq -rn --arg l "$claim_label" '$l|@uri')"
+                gh api -X DELETE "repos/$claim_repo/issues/$claim_number/labels/$encoded" >/dev/null 2>&1 \
+                  && echo "released the claim, since nothing will run" \
+                  || echo "::warning::couldn't release the claim; it expires on its own"
+              fi
             fi
           done
           exit "$failed"

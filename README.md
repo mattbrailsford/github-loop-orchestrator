@@ -66,7 +66,8 @@ Giving the routine its own identity instead, such as your own GitHub App, is com
 | How to fire a hosted routine with a prompt | what gets posted back, or in what format |
 | How to stop runaway loops | anything about triage, fixes, or releases |
 
-Every action goes to a routine. The orchestrator never comments, labels, or closes anything.
+Every action goes to a routine. The orchestrator's only writes are a claim label, so two runs
+never work on one item at once, and a 👀 on the comment that started a run.
 
 ## Example
 

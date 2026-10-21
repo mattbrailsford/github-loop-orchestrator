@@ -117,19 +117,16 @@ Once finalized, the quoted line and the "Proposed" line go.
 
 ## Claiming an issue
 
-A second event on the same issue can start a second run while the first is still working. Each
-run claims the issue as its first real step, so the second one's re-check sees the claim and
-stops.
+The orchestrator claims the issue before firing: it adds `loop/working` (set as `claim.label` in
+the config), and nothing else fires for that issue until the routine removes it, or 30 minutes
+pass. The routine's prompt ends with when to remove it. So the skills don't claim anything
+themselves, and two quick `🤖` comments can't start two runs.
 
-| Route | Claim, done first | Why a second run stops |
-|---|---|---|
-| `new-issue` | add `state/drafted`, right after the security check | the route needs no `state/*` label |
-| `maintainer-says` | none | a second run edits the same one comment again; asked to approve an issue that's no longer drafted, it does nothing |
-| `reporter-replies` | none | a second run only edits the same one comment again, so it costs tokens but posts nothing new |
-| `investigate` | none | an edge fires once, from the run that approved |
+`state/drafted` is a different thing: it marks an issue as waiting on a maintainer's answer, and
+stays on until they give one.
 
-The security check comes before the claim on purpose. Claiming first would put a label on a
-possible security report.
+**On a possible security report**, the claim label is there only while the routine runs. It says
+nothing about the issue, and the routine removes it before stopping, so no lasting label is left.
 
 ## Security flags
 
@@ -169,16 +166,16 @@ run from these routes, they need:
    request in plain words, acts on it (approve, another state, a correction, a fresh look), and
    updates the comment to say what it understood.
 3. **`--propose` on the investigation skill,** so its result is proposed the same way.
-4. **Claim first** in `--propose`, as [Claiming an issue](#claiming-an-issue) says, after the
-   security check and before any other work.
+4. **Nothing to claim.** The orchestrator claims the issue and tells the routine when to release
+   it ([Claiming an issue](#claiming-an-issue)). The skill only has to add `state/drafted` when
+   it proposes.
 5. **Never start a comment with 🤖,** which would address the routine itself.
 6. **A private notification for security flags,** through `/loop-notify`, in place of telling
    someone in the chat. Without it, an unattended run has no private way to tell anyone, so it
    stops and leaves the issue unlabeled.
 7. **Respecting `{code_private}`:** no file paths or code in public comments when it's `true`.
 8. **Tests** for each: an unattended run asks no questions, `--propose` never sets a final state,
-   `--respond` acts on a misspelled approval, the claim comes before the work, and a security
-   report gets no label.
+   `--respond` acts on a misspelled approval, and a security report gets no lasting label.
 
 Firing the `investigate` edge is in the route's prompt, not the skill. The skill doesn't need to
 know what runs next.
@@ -214,7 +211,9 @@ know what runs next.
 - [ ] Approving `state/needs-investigation` starts the investigation through the edge.
 - [ ] A test issue that reads like a security report gets no comment and no label, and
       maintainers get one push notification, even if two events fire for it.
-- [ ] Two quick `🤖 approve` comments on one drafted issue produce one approval, not two.
+- [ ] Two quick `🤖 approve` comments on one drafted issue produce one run; the second is skipped
+      while `loop/working` is on.
+- [ ] Every comment that starts a run gets a 👀 within seconds.
 
 ## Before a real tracker
 

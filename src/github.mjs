@@ -33,6 +33,24 @@ export function githubLookup({ token, apiUrl = 'https://api.github.com', warn = 
       };
     },
 
+    // Minutes since the label was last added, from the item's events. null when it can't tell.
+    async labelAge(repo, number, label, now = Date.now()) {
+      const first = await fetch(`${apiUrl}/repos/${repo}/issues/${number}/events?per_page=100`, { headers });
+      if (!first.ok) return null;
+      let events = await first.json();
+      const last = (first.headers.get('link') ?? '').match(/<([^>]+)>;\s*rel="last"/);
+      if (last) {
+        const page = await fetch(last[1], { headers });
+        if (page.ok) events = events.concat(await page.json());
+      }
+      const added = events
+        .filter((e) => e.event === 'labeled' && (e.label?.name ?? '').toLowerCase() === label.toLowerCase())
+        .map((e) => Date.parse(e.created_at))
+        .filter(Number.isFinite);
+      if (added.length === 0) return null;
+      return (now - Math.max(...added)) / 60000;
+    },
+
     async isPrivate(repo) {
       const r = await get(`/repos/${repo}`);
       if (!r.ok) return true;

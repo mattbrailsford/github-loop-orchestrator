@@ -37,6 +37,54 @@
       "description": "Where the code lives, when this repo is a separate tracker. Makes this config the hub.",
       "$ref": "#/$defs/repo"
     },
+    "claim": {
+      "description": "While a run works on an issue or PR, this label is on it and nothing else fires there. false turns it off.",
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50,
+              "pattern": "^[^*]+$",
+              "default": "loop/working"
+            },
+            "stale_after_minutes": {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 1440,
+              "default": 30
+            }
+          }
+        }
+      ]
+    },
+    "acknowledge": {
+      "description": "The reaction added to the comment that started a run, so people see it was heard. false turns it off.",
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "enum": [
+            "+1",
+            "-1",
+            "laugh",
+            "confused",
+            "heart",
+            "hooray",
+            "rocket",
+            "eyes"
+          ]
+        }
+      ],
+      "default": "eyes"
+    },
     "routes": {
       "type": "array",
       "minItems": 1,

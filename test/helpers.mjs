@@ -43,7 +43,7 @@ export function baseConfig(overrides = {}) {
 }
 
 // A fake GitHub: permissions by login, issues by "repo#number", private repos by name.
-export function fakeLookup({ permissions = {}, issues = {}, privateRepos = [], links = {} } = {}) {
+export function fakeLookup({ permissions = {}, issues = {}, privateRepos = [], links = {}, labelAges = {} } = {}) {
   const calls = [];
   return {
     calls,
@@ -58,6 +58,10 @@ export function fakeLookup({ permissions = {}, issues = {}, privateRepos = [], l
     async isPrivate(repo) {
       calls.push(['isPrivate', repo]);
       return privateRepos.includes(repo);
+    },
+    async labelAge(repo, number, label) {
+      calls.push(['labelAge', repo, number, label]);
+      return labelAges[`${repo}#${number}:${label}`] ?? null;
     },
     async linkedIssue(repo, number) {
       calls.push(['linkedIssue', repo, number]);

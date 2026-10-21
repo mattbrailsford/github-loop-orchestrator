@@ -22,9 +22,20 @@ function requestBlock(values, request) {
   return `${from}\n<request>\n${safe}\n</request>${note}`;
 }
 
-export function buildPrompt(template, values, request, { scheduled = false } = {}) {
+export function claimLine(claim, values) {
+  return (
+    `This run holds the claim: the label "${claim.label}" on ${values.repo}#${values.number}. ` +
+    'While it is on, no other run starts for this item. Before you finish, look for comments addressed ' +
+    'to you that were posted after this run started, and handle them too. Then, as your last step, ' +
+    `whatever happened, remove the "${claim.label}" label. The one exception: if you fired a ` +
+    'loop-edge, leave the label on, because the run you started takes over the claim.'
+  );
+}
+
+export function buildPrompt(template, values, request, { scheduled = false, claim = null } = {}) {
   const filled = template.replace(PLACEHOLDER_RE, (_, name) =>
     name === 'request' ? `\n\n${requestBlock(values, request)}\n\n` : String(values[name] ?? ''),
   );
-  return `${filled.trim()}\n\n${scheduled ? SCHEDULED_RECHECK : RECHECK}`;
+  const tail = scheduled ? SCHEDULED_RECHECK : claim ? `${RECHECK}\n\n${claimLine(claim, values)}` : RECHECK;
+  return `${filled.trim()}\n\n${tail}`;
 }

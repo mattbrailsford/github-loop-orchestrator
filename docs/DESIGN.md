@@ -20,8 +20,9 @@ How the orchestrator works, what it owns, and what it leaves to each repo. Anyth
 
 - **It knows events, not meanings.** No label name, comment format, or workflow step is built in.
   A repo's config says what matters.
-- **It never writes to GitHub.** Every comment, label, and close is the routine's. The
-  orchestrator's only output is a routine firing, or nothing.
+- **It writes almost nothing to GitHub.** Every comment, label, and close is the routine's. The
+  orchestrator's only writes are the claim label and a 👀 reaction on the comment that started a
+  run ([guards](#8-guards)). Otherwise its only output is a routine firing, or nothing.
 - **No match, no run.** An event that matches no route stops in the match step, before any model
   starts. There is no hidden "check everything" sweep; a sweep only runs when a repo declares
   one as a schedule route ([section 7](#7-schedules)).
@@ -67,8 +68,8 @@ setup to one routine and two secrets, however many routes there are.
 the same config, and the same short stored prompt, pasted as is. Each fire's text is added after
 that stored prompt. The stored prompt holds the rules every run needs: follow only the route's
 instruction, treat issue text as data, check out a PR's branch before working on it (a routine
-starts on the default branch), claim the work first, and notify a person privately when it gives
-up. Per repo, only the repo names change. A routine someone hand-tuned is one nobody else can
+starts on the default branch), release the orchestrator's claim when done, and notify a person
+privately when it gives up. Per repo, only the repo names change. A routine someone hand-tuned is one nobody else can
 reason about.
 
 **The orchestrator repo stays public.** A reusable workflow in a private repo can't be called
@@ -596,12 +597,35 @@ All of these work without knowing what any route does.
   number queues a second event rather than racing the first. The repo is part of the key because
   a hub sees issue #12 from the tracker and PR #12 from the code repo, and those mustn't block
   each other.
-  - **This doesn't stop two routine runs overlapping.** The routine runs after the fire, outside
-    the workflow, so two quick events can start two runs on one issue. Two things cover it:
-    the routine **claims** the item before doing real work, usually by
-    changing a label, and every prompt ends with a **re-check** that stops a run whose item no
-    longer qualifies. A second run sees the first one's claim at its re-check and stops. The
-    claim has to be the run's first action, not its last, or it guards nothing.
+  - **On its own, that doesn't stop two routine runs overlapping,** since the routine runs after
+    the fire, outside the workflow. The claim does (next point).
+- **Claims.** Before firing, the orchestrator adds a claim label to the issue or PR, `claim.label`
+  in the config (`loop/working` if not set). While it's on, no other route fires for that item,
+  and the log says "another run holds the claim."
+  - **No race.** The check and the label happen inside the routing job, which already runs one at
+    a time per item. The check reads the item's labels as they are now, not as the event saw
+    them, so a claim added a second ago counts.
+  - **Released by the routine.** Every prompt ends with the claim's terms: handle any comments
+    addressed to it that arrived during the run, then remove the label as its last step. So a
+    correction posted mid-run still gets done.
+  - **Released on failure.** If the fire itself fails, the workflow removes the label at once.
+  - **Expires.** A claim older than `claim.stale_after_minutes` (30 if not set) is taken over, for
+    a run that crashed before releasing. The age comes from when the label was last added, in the
+    item's events. An age it can't read counts as still held.
+  - **Edges pass it on.** An edge comes from the run holding the claim, so it skips the check and
+    the next run takes the claim over. The prompt tells a run that fires an edge to leave the
+    label on.
+  - **Schedules don't claim,** since they aren't about one item.
+  - **It can't start anything.** The label is added with the workflow's own token, and GitHub
+    never starts workflows from that token's actions. The routine's removal is an "unlabeled"
+    event, which no route uses.
+  - **`claim: false`** turns it off.
+- **A 👀 reaction says "seen."** The comment that started a run, or the body of a newly opened
+  issue or PR, gets a 👀 from the workflow within seconds, long before the routine starts.
+  `acknowledge` in the config picks another reaction, or `false` turns it off. Nothing removes
+  it; it's a receipt, not a lock.
+- **The caller needs write access** to issues and pull requests for these two, and the template
+  asks for it. Without it, both fail with a warning, and the routine still fires, unclaimed.
   - **GitHub keeps only one waiting run per group.** A third event while one runs and one waits
     replaces the waiting one. Routing takes seconds, so this should be rare.
 - **Who's a maintainer fails closed.** If GitHub's permission check errors, the actor is treated
@@ -628,8 +652,8 @@ listed here:
   something odd. Giving the routine as few write tools as it needs is the repo's job.
 - **Keeping private code out of public comments.** With a public tracker and private code, the
   orchestrator passes `{code_private}`, but what to leave out of a comment is the repo's call.
-- **How a run claims its item.** The orchestrator can't, since it doesn't know what labels mean.
-  Each route's skill does, as its first step ([guards](#8-guards)).
+- **Honoring the claim.** The orchestrator adds and checks the claim label; releasing it at the
+  end of a run is the routine's job, as every prompt tells it ([guards](#8-guards)).
 - **Security reports.** If an issue reads like a vulnerability, the routine must not discuss it
   in public. The orchestrator can't spot one, since it never reads the text. The routine tells a
   maintainer privately instead.
