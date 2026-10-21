@@ -1,7 +1,7 @@
 # github-loop-orchestrator
 
-**A proposal, not a product.** The orchestrator is built and tested locally, but it hasn't run on
-a real repo yet.
+**A proposal, not a product.** Tested end to end on a private test repo: a GitHub event, the match,
+the routine firing, and its reply. Not yet run on a real tracker.
 
 A generic way to drive hosted Claude routines from GitHub. People steer with labels and comments.
 A config file in each repo says which event starts which routine, and with what prompt. The
@@ -71,16 +71,17 @@ label meanings live there, not here.
 
 ## Setting up a repo
 
-1. **Set up a routine** in Claude, following [`templates/routine.md`](templates/routine.md): the
-   standard config, the stored prompt to paste as is, and a notification channel.
+1. **Set up a routine** at [claude.ai/code/routines](https://claude.ai/code/routines), following
+   [`templates/routine.md`](templates/routine.md): the standard config, the stored prompt to
+   paste as is, and an API trigger. Remove the connectors it attaches by default.
    - **Give it skills:** paste [`templates/cloud-setup.sh`](templates/cloud-setup.sh) into its
      cloud environment's "Setup script" field, and list your plugin repos in `SKILL_SOURCES`.
      It copies their skills and agents in when the environment builds. Add `github.com` to the
      environment's allowed domains.
    - **Call skills by bare name** in your route prompts (`/issue-triage`), since copied skills
      have no plugin prefix.
-   - From its "Call via API" settings, copy the fire URL and token.
-2. **Add two secrets** to the repo: `LOOP_FIRE_URL` and `LOOP_FIRE_TOKEN`.
+2. **Add two secrets** to the repo: `LOOP_FIRE_URL` and `LOOP_FIRE_TOKEN`, from the routine's API
+   trigger ([how](templates/routine.md#the-fire-url-and-token)).
 3. **Copy [`templates/caller.yml`](templates/caller.yml)** to `.github/workflows/loop.yml`.
 4. **Write `.github/loop-orchestrator.yml`** with your routes. Start from the
    [example](examples/triage/loop-orchestrator.yml). For editor help, add this
@@ -134,7 +135,9 @@ config and needs `yq`; it skips without it locally, and runs in CI.
 - [x] Design, in [docs/DESIGN.md](docs/DESIGN.md)
 - [x] One worked example, in [examples/triage/](examples/triage/)
 - [x] The orchestrator: matching, mentions, edges, the hub, schedules, and the workflow, with tests
-- [ ] Run it on a test repo. Until then, the workflow files are untested on GitHub.
+- [x] Run it on a test repo: issues and plain comments from the routine's account ignored, a 🤖
+      comment fired the routine, and its reply started nothing
+- [ ] Edges and the ticker, on the test repo
 - [ ] Triage skills that support what the example needs (`--unattended`, `--propose`,
       `--respond`)
 
@@ -143,7 +146,7 @@ config and needs `yq`; it skips without it locally, and runs in CI.
 - that the workflow's basic token can check a user's write access,
 - that GitHub returns a PR's linked issue when it's in another repo,
 - that the routine fire API, still in beta, stays as it is,
-- that a routine can be scheduled hourly and send `repository_dispatch`, which the ticker needs.
+- that a routine can send `repository_dispatch`, which edges and the ticker need.
 
 ## Open questions
 

@@ -76,7 +76,18 @@ from other repos without org settings, and fails before any job starts, so there
 routine's Setup script also clones it, which needs a token if it's private.
 
 **Firing a routine** is an HTTP `POST` to its fire URL with a bearer token, sent with an
-`anthropic-beta` header. **Unverified:** whether that API is stable yet, given the beta header.
+`anthropic-beta` header. The route's prompt goes in the body's `text`. Three things about it:
+
+- **The text arrives fenced off.** Claude wraps it in a `<routine-fire-payload>` block marked as
+  untrusted, so a leaked token can't steer the routine. The routine acts on it only because its
+  stored prompt says to follow that block ([`templates/routine.md`](../templates/routine.md#stored-prompt)).
+- **30 fires an hour per routine,** 100 across the account. Over that, the fire fails and the
+  workflow run shows it.
+- **It's a beta API.** Breaking changes come behind a new dated header, and the two previous ones
+  keep working for a while, per Claude's docs.
+
+Tested end to end on a private test repo: a 🤖 comment fired the routine, and its reply came back
+on the issue.
 
 ### Getting skills into the routine
 
