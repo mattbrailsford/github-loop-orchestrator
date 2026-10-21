@@ -1,3 +1,5 @@
+import { parseCron } from './cron.mjs';
+
 export const EVENTS = [
   'issues.opened',
   'issues.labeled',
@@ -6,6 +8,7 @@ export const EVENTS = [
   'pull_request.labeled',
   'pr_comment.created',
   'edge',
+  'schedule',
 ];
 
 export const PLACEHOLDERS = [
@@ -25,7 +28,11 @@ export const PLACEHOLDERS = [
   'hop',
   'next_hop',
   'request',
+  'time',
 ];
+
+// A scheduled run is about the whole repo, so nothing about one issue, PR, or person applies.
+const SCHEDULE_PLACEHOLDERS = new Set(['repo', 'tracker_repo', 'code_repo', 'code_private', 'route', 'event', 'time']);
 
 export const ACTORS = ['maintainer', 'author', 'maintainer_or_author', 'anyone'];
 
@@ -34,7 +41,7 @@ const OPENED_EVENTS = new Set(['issues.opened', 'pull_request.opened']);
 const LABELED_EVENTS = new Set(['issues.labeled', 'pull_request.labeled']);
 
 const TOP_KEYS = new Set(['version', 'bots', 'max_hops', 'code_repo', 'routes']);
-const ROUTE_KEYS = new Set(['name', 'when', 'if', 'prompt', 'allow_from', 'code_repo']);
+const ROUTE_KEYS = new Set(['name', 'when', 'if', 'prompt', 'allow_from', 'code_repo', 'cron']);
 const CONDITION_KEYS = new Set([
   'label',
   'has_label',
@@ -53,6 +60,7 @@ const LOGIN_RE = /^[A-Za-z0-9][A-Za-z0-9-]*(\[bot\])?$/;
 export const PLACEHOLDER_RE = /\{([A-Za-z_]+)\}/g;
 
 export const DEFAULT_MAX_HOPS = 5;
+
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isStringArray = (v) => Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === 'string' && s.length > 0);
@@ -74,6 +82,10 @@ function checkLabelPattern(pattern, where, errors) {
 function checkConditions(route, where, errors) {
   const cond = route.if;
   if (cond === undefined) return;
+  if (route.when === 'schedule') {
+    errors.push(`${where}.if: a schedule route takes no conditions; it isn't about one issue or PR`);
+    return;
+  }
   if (!isObject(cond)) {
     errors.push(`${where}.if: must be a map of conditions`);
     return;
@@ -131,6 +143,9 @@ function checkPrompt(route, where, errors) {
   }
   for (const [, name] of route.prompt.matchAll(PLACEHOLDER_RE)) {
     if (!PLACEHOLDERS.includes(name)) errors.push(`${where}.prompt: unknown placeholder "{${name}}"`);
+    else if (route.when === 'schedule' && !SCHEDULE_PLACEHOLDERS.has(name)) {
+      errors.push(`${where}.prompt: "{${name}}" is about one issue or PR, so a schedule route can't use it`);
+    }
     if (name === 'request' && !(isObject(route.if) && 'mentions' in route.if)) {
       errors.push(`${where}.prompt: "{request}" only works in a route with a "mentions" condition`);
     }
@@ -185,6 +200,15 @@ export function validateConfig(config) {
     if ('code_repo' in route && !(typeof route.code_repo === 'string' && REPO_RE.test(route.code_repo))) {
       errors.push(`${where}.code_repo: must be "owner/name"`);
     }
+    if (route.when === 'schedule') {
+      try {
+        parseCron(route.cron);
+      } catch (err) {
+        errors.push(`${where}.cron: ${route.cron === undefined ? 'a schedule route needs one, like "0 7 * * 1-5"' : err.message}`);
+      }
+    } else if ('cron' in route) {
+      errors.push(`${where}.cron: only a schedule route takes cron`);
+    }
     if (route.when === 'edge') {
       if (!isStringArray(route.allow_from)) errors.push(`${where}.allow_from: an edge route needs a list of routes it accepts edges from`);
     } else if ('allow_from' in route) {
@@ -197,7 +221,11 @@ export function validateConfig(config) {
   config.routes.forEach((route, i) => {
     if (!isObject(route) || !Array.isArray(route.allow_from)) return;
     for (const from of route.allow_from) {
-      if (!names.has(from)) errors.push(`routes[${i}] (${route.name}).allow_from: no route named "${from}"`);
+      const source = config.routes.find((r) => isObject(r) && r.name === from);
+      if (!source) errors.push(`routes[${i}] (${route.name}).allow_from: no route named "${from}"`);
+      else if (source.when === 'schedule') {
+        errors.push(`routes[${i}] (${route.name}).allow_from: "${from}" is a schedule route, which has no issue to hand on`);
+      }
     }
   });
 

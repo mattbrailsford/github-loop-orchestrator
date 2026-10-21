@@ -19,9 +19,11 @@ gets posted, and how. The orchestrator only sees the routes in
 | `maintainer-asks` | a maintainer mentions `@claude` on any other issue | proposes a fresh triage, using what they asked |
 | `reporter-replies` | the reporter replies on a drafted or needs-info issue | proposes again, using the new detail |
 | `investigate` | an edge from `maintainer-decides`, when the final state is `state/needs-investigation` | investigates, and proposes the result |
+| `stale-drafts` | weekday mornings, 07:00 UTC | sends maintainers one reminder about proposals waiting more than 5 days |
 
 Investigating only reads the code and runs it, so that edge runs without a second approval.
-Nothing in these routes writes code.
+Nothing in these routes writes code. `stale-drafts` needs the ticker routine, or GitHub's
+timer in a private repo ([`templates/routine.md`](../../templates/routine.md#the-ticker)).
 
 ## A separate tracker
 

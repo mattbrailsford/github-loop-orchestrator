@@ -11,9 +11,10 @@ How the orchestrator works, what it owns, and what it leaves to each repo. Anyth
 4. [Matching](#4-matching)
 5. [The prompt](#5-the-prompt)
 6. [Loops triggering loops](#6-loops-triggering-loops)
-7. [Guards](#7-guards)
-8. [What each repo owns](#8-what-each-repo-owns)
-9. [Open questions](#9-open-questions)
+7. [Schedules](#7-schedules)
+8. [Guards](#8-guards)
+9. [What each repo owns](#9-what-each-repo-owns)
+10. [Open questions](#10-open-questions)
 
 ## 1. Rules the design keeps
 
@@ -22,9 +23,11 @@ How the orchestrator works, what it owns, and what it leaves to each repo. Anyth
 - **It never writes to GitHub.** Every comment, label, and close is the routine's. The
   orchestrator's only output is a routine firing, or nothing.
 - **No match, no run.** An event that matches no route stops in the match step, before any model
-  starts. There is no "check everything" sweep.
+  starts. There is no hidden "check everything" sweep; a sweep only runs when a repo declares
+  one as a schedule route ([section 7](#7-schedules)).
 - **One event, one routine run.** The orchestrator never chains steps itself. One step starts
-  the next only through a declared edge ([section 6](#6-loops-triggering-loops)).
+  the next only through a declared edge ([section 6](#6-loops-triggering-loops)). The one
+  exception is a schedule tick, which fires every schedule route due that hour.
 - **Untrusted text never goes into a prompt.** Issue titles, bodies, and comments are written by
   anyone. The prompt carries IDs only, and the routine fetches the text itself
   ([section 5](#5-the-prompt)). The one exception is a maintainer's own request after a mention,
@@ -181,7 +184,7 @@ code_repo: umbraco/Umbraco.Forms
   of the code. The orchestrator can't stop that, since it never sees what's posted. But it can
   say so: `{code_private}` is `true` when the code repo is private, read from GitHub. A prompt
   passes it on, and the repo's skills decide what to leave out
-  ([section 8](#8-what-each-repo-owns)).
+  ([section 9](#9-what-each-repo-owns)).
 - **The private repo's name stays out of public logs.** The hub's workflow runs in the public
   tracker, so its logs are public. When the code repo is private, the orchestrator logs the route
   name and the issue number, never the code repo's name or a PR number from it.
@@ -268,8 +271,8 @@ YAML because prompts are long text, and YAML's `>-` lets them span lines without
 - **Quote anything with `*` in it.** A bare `*` at the start of a value means something else in
   YAML. `"status/*"` is safe; `status/*` unquoted may not be.
 - **The workflow turns it into JSON with `yq`,** then the match script (Node, no packages)
-  reads that. **Unverified:** that `yq` comes preinstalled on GitHub's Ubuntu runners. If it's
-  missing, the workflow stops with an error rather than download an unpinned copy.
+  reads that. GitHub's Ubuntu runners include `yq` (confirmed in this repo's CI). On a runner
+  without it, the workflow stops with an error rather than download an unpinned copy.
 
 The match script checks the config itself (`src/config.mjs`) and rejects one with any error. A
 broken config fails the workflow loudly: a silently ignored config means routines stop firing and
@@ -296,6 +299,7 @@ A closed list. Each is a GitHub event and action, written `event.action`:
 | `pull_request.labeled` | a label is added to a PR |
 | `pr_comment.created` | a comment is posted on a PR (GitHub sends these as `issue_comment` too; the script tells them apart) |
 | `edge` | a routine started the next step ([section 6](#6-loops-triggering-loops)) |
+| `schedule` | an hourly tick, when the route's `cron` is due ([section 7](#7-schedules)) |
 
 Adding an event later is a change to this list, the schema, and the tests.
 
@@ -366,6 +370,7 @@ in a fixed set of placeholders:
 | `{hop}` | how many edges led here (0 for a GitHub event) |
 | `{next_hop}` | `{hop}` plus one: the hop to send with the next edge |
 | `{request}` | what a maintainer asked for after a mention; only in `mentions` routes ([below](#the-request-placeholder)) |
+| `{time}` | for schedule routes, the hour it ran for, like `2026-10-19T07:00Z` |
 
 There's deliberately no placeholder for a title, body, or general comment text. Anyone can write
 those, and text pasted into a prompt can try to steer the model. The routine fetches them itself,
@@ -475,7 +480,63 @@ don't depend on which token the routine has.
   that writes code, merges, or releases should be `issues.labeled` with `actor: maintainer`,
   never `edge`.
 
-## 7. Guards
+## 7. Schedules
+
+Some work isn't about one issue: a weekday reminder about proposals nobody answered, a weekly
+sweep for stale issues. A schedule route covers that.
+
+```yaml
+- name: stale-drafts
+  when: schedule
+  cron: "0 7 * * 1-5"   # 07:00 UTC, Monday to Friday
+  prompt: >-
+    List the open issues in {repo} that have waited more than 5 days for a maintainer...
+```
+
+### How it's triggered
+
+Once an hour, something sends the hub an event. The matcher fires every schedule route whose
+`cron` is due that hour. Two things can send it:
+
+| Source | How | When to use it |
+|---|---|---|
+| **The ticker** (default) | a tiny routine on Claude's own hourly schedule sends each hub a `loop-tick` dispatch event | public repos |
+| **GitHub's timer** | the caller workflow's `schedule:` trigger, every hour | private repos |
+
+**Why a ticker at all:** in a public repo, GitHub turns scheduled workflows off after 60 days
+without "repository activity," and its docs don't say what counts. If issues and comments don't,
+a busy tracker that's rarely committed to loses its timer without warning. A `loop-tick` is a
+dispatch event, which that rule doesn't cover. Setting up the ticker is in
+[`templates/routine.md`](../templates/routine.md#the-ticker).
+
+**Anything else that can make an HTTP call an hour** can send the tick too: a private repo's
+GitHub timer, a cloud scheduler, a cron job. [`docs/TICK-SOURCES.md`](TICK-SOURCES.md) compares
+them. The token each one holds can push code to the hub, so where it lives matters more than
+which timer it is.
+
+**Use one source, not two.** Two sources firing means each due route runs twice.
+
+### Rules
+
+- **Hourly, at most.** The minute in `cron` must be `0`. Ticks can arrive late, so the matcher
+  matches by the hour, not the minute.
+- **UTC.** `0 7 * * *` is 07:00 UTC, whatever the repo's timezone.
+- **Every due route fires.** Unlike other events, a tick can start several runs, one per due
+  route. Each fire is separate; one failing doesn't stop the rest.
+- **No conditions, and only repo-wide placeholders.** A scheduled run has no issue, PR, or
+  person, so `if` is rejected, and so are `{number}`, `{actor}`, and the like. It gets `{repo}`,
+  `{tracker_repo}`, `{code_repo}`, `{code_private}`, `{route}`, `{event}`, and `{time}`, the hour
+  it ran for, like `2026-10-19T07:00Z`.
+- **Only in the hub.** A tick or timer in a code repo is ignored, so a split setup can't run a
+  schedule twice.
+- **No edges out.** An edge carries one issue, and a scheduled run has none, so an edge route
+  can't list a schedule route in `allow_from`.
+- **A missed hour is skipped, not caught up.** The matcher only knows the current hour. A route
+  due at 07:00 whose tick never came doesn't run at 08:00.
+- **Its prompt ends differently.** Instead of the re-check for one issue, a scheduled prompt
+  ends with: this is about the whole repo, and if there's nothing to do, stop quietly.
+
+## 8. Guards
 
 All of these work without knowing what any route does.
 
@@ -504,7 +565,7 @@ All of these work without knowing what any route does.
 - **Public logs say little.** On a public repo, Action logs are public. The orchestrator logs the
   route name and why it matched, never issue text.
 
-## 8. What each repo owns
+## 9. What each repo owns
 
 The orchestrator stays generic by pushing everything else to the repo. That's a lot, so it's
 listed here:
@@ -517,7 +578,7 @@ listed here:
 - **Keeping private code out of public comments.** With a public tracker and private code, the
   orchestrator passes `{code_private}`, but what to leave out of a comment is the repo's call.
 - **How a run claims its item.** The orchestrator can't, since it doesn't know what labels mean.
-  Each route's skill does, as its first step ([guards](#7-guards)).
+  Each route's skill does, as its first step ([guards](#8-guards)).
 - **Security reports.** If an issue reads like a vulnerability, the routine must not discuss it
   in public. The orchestrator can't spot one, since it never reads the text. The routine tells a
   maintainer privately instead.
@@ -531,7 +592,7 @@ listed here:
 
 The [example](../examples/triage/) shows one repo's answers.
 
-## 9. Open questions
+## 10. Open questions
 
 1. **Who does the routine post as?** This one matters most. If it posts with a person's GitHub
    account, its comments look like that person's. Then "bots never match" can't catch them, and

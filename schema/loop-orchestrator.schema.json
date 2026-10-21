@@ -5,13 +5,21 @@
   "description": "Routes GitHub events to a hosted Claude routine. This schema is for editor help; the match script's own checks (src/config.mjs) are the ones that count.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "routes"],
+  "required": [
+    "version",
+    "routes"
+  ],
   "properties": {
-    "version": { "const": 1 },
+    "version": {
+      "const": 1
+    },
     "bots": {
       "description": "Logins to treat as bots, on top of GitHub's own Bot type.",
       "type": "array",
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "max_hops": {
       "description": "The most edges one chain may follow before the orchestrator stops it.",
@@ -27,19 +35,40 @@
     "routes": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/route" }
+      "items": {
+        "$ref": "#/$defs/route"
+      }
     }
   },
   "$defs": {
-    "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
-    "label": { "type": "string", "pattern": "^[^*]+\\*?$" },
-    "labels": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/label" } },
+    "repo": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "label": {
+      "type": "string",
+      "pattern": "^[^*]+\\*?$"
+    },
+    "labels": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/label"
+      }
+    },
     "route": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "when", "prompt"],
+      "required": [
+        "name",
+        "when",
+        "prompt"
+      ],
       "properties": {
-        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
         "when": {
           "enum": [
             "issues.opened",
@@ -48,12 +77,15 @@
             "pull_request.opened",
             "pull_request.labeled",
             "pr_comment.created",
-            "edge"
+            "edge",
+            "schedule"
           ]
         },
-        "if": { "$ref": "#/$defs/conditions" },
+        "if": {
+          "$ref": "#/$defs/conditions"
+        },
         "prompt": {
-          "description": "The prompt template. Placeholders: {repo} {tracker_repo} {code_repo} {code_private} {linked_issue} {number} {kind} {route} {event} {label} {actor} {actor_role} {comment_id} {hop} {next_hop} {request}.",
+          "description": "The prompt template. Placeholders: {repo} {tracker_repo} {code_repo} {code_private} {linked_issue} {number} {kind} {route} {event} {label} {actor} {actor_role} {comment_id} {hop} {next_hop} {request} {time}. A schedule route may only use {repo} {tracker_repo} {code_repo} {code_private} {route} {event} {time}.",
           "type": "string",
           "minLength": 1
         },
@@ -61,31 +93,78 @@
           "description": "Edge routes only: the routes allowed to start this one.",
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
-        "code_repo": { "$ref": "#/$defs/repo" }
+        "code_repo": {
+          "$ref": "#/$defs/repo"
+        },
+        "cron": {
+          "description": "Schedule routes only: when it's due, in UTC. Five fields with the minute set to 0, like \"0 7 * * 1-5\".",
+          "type": "string",
+          "pattern": "^0\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+$"
+        }
       }
     },
     "conditions": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "label": { "$ref": "#/$defs/label" },
-        "has_label": { "$ref": "#/$defs/labels" },
-        "lacks_label": { "$ref": "#/$defs/labels" },
-        "actor": { "enum": ["maintainer", "author", "maintainer_or_author", "anyone"] },
-        "comment_starts_with": { "type": "string", "minLength": 1 },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "has_label": {
+          "$ref": "#/$defs/labels"
+        },
+        "lacks_label": {
+          "$ref": "#/$defs/labels"
+        },
+        "actor": {
+          "enum": [
+            "maintainer",
+            "author",
+            "maintainer_or_author",
+            "anyone"
+          ]
+        },
+        "comment_starts_with": {
+          "type": "string",
+          "minLength": 1
+        },
         "mentions": {
           "description": "Logins without @. A mentions route must also have actor: maintainer.",
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*(\\[bot\\])?$" }
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*(\\[bot\\])?$"
+          }
         },
-        "state": { "enum": ["open", "closed"] },
-        "in": { "enum": ["tracker", "code"] }
+        "state": {
+          "enum": [
+            "open",
+            "closed"
+          ]
+        },
+        "in": {
+          "enum": [
+            "tracker",
+            "code"
+          ]
+        }
       },
       "dependentSchemas": {
-        "mentions": { "required": ["actor"], "properties": { "actor": { "const": "maintainer" } } }
+        "mentions": {
+          "required": [
+            "actor"
+          ],
+          "properties": {
+            "actor": {
+              "const": "maintainer"
+            }
+          }
+        }
       }
     }
   }

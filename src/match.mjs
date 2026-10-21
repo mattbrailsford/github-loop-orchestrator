@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_HOPS, codeReposOf, labelMatches, validateConfig } from './config.mjs';
+import { cronDue } from './cron.mjs';
 import { extractRequest, findMention } from './mentions.mjs';
 import { buildPrompt, usesPlaceholder } from './prompt.mjs';
 
@@ -10,7 +11,12 @@ export class ConfigError extends Error {
 }
 
 const WRITE_LEVELS = new Set(['admin', 'maintain', 'write']);
-const none = (log) => ({ route: null, prompt: '', log });
+const none = (log) => ({ route: null, prompt: '', fires: [], log });
+const one = (route, prompt, log) => ({ route, prompt, fires: [{ route, prompt }], log });
+
+export function hourStamp(date) {
+  return `${date.toISOString().slice(0, 13)}:00Z`;
+}
 const lower = (s) => (s ?? '').toLowerCase();
 
 // lookup is how the matcher reaches GitHub; see github.mjs. Tests pass a fake.
@@ -35,9 +41,38 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
     return none('the event is about a repo the hub config does not list');
   }
 
-  if (event.when !== 'edge') {
+  if (event.when !== 'edge' && event.when !== 'schedule') {
     const bots = new Set((config.bots ?? []).map(lower));
     if (event.senderIsBot || bots.has(lower(event.actor))) return none('the event came from a bot');
+  }
+
+  // Every due route fires, so two schedules that share an hour both run.
+  if (event.when === 'schedule') {
+    if (lower(workflowRepo) !== hub) return none('a schedule must run in the hub repo');
+    const stamp = hourStamp(event.time);
+    const due = config.routes.filter((r) => r.when === 'schedule' && cronDue(r.cron, event.time));
+    if (due.length === 0) return none(`no schedule route is due at ${stamp}`);
+    const fires = [];
+    for (const route of due) {
+      const codeRepo = route.code_repo ?? config.code_repo ?? hubRepo;
+      const needsPrivacy = usesPlaceholder(route.prompt, 'code_private');
+      const values = {
+        repo: hubRepo,
+        tracker_repo: hubRepo,
+        code_repo: codeRepo,
+        code_private: String(needsPrivacy ? await lookup.isPrivate(codeRepo) : false),
+        route: route.name,
+        event: 'schedule',
+        time: stamp,
+      };
+      fires.push({ route: route.name, prompt: buildPrompt(route.prompt, values, null, { scheduled: true }) });
+    }
+    return {
+      route: fires[0].route,
+      prompt: fires[0].prompt,
+      fires,
+      log: `due at ${stamp} (${event.source}): ${fires.map((f) => `"${f.route}"`).join(', ')}`,
+    };
   }
 
   let candidates = config.routes;
@@ -120,11 +155,7 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
     };
     const request = 'mentions' in c ? extractRequest(mentionText(), c.mentions) : null;
 
-    return {
-      route: route.name,
-      prompt: buildPrompt(route.prompt, values, request),
-      log: tellNumber(`matched route "${route.name}"`),
-    };
+    return one(route.name, buildPrompt(route.prompt, values, request), tellNumber(`matched route "${route.name}"`));
   }
 
   return none(tellNumber(`no route matched ${event.when}`));

@@ -36,7 +36,8 @@ try {
   const result = await matchEvent({ config, event, workflowRepo, hubRepo, lookup });
   console.log(result.log);
   setOutput('route', result.route ?? '');
-  setOutput('prompt', result.prompt);
+  setOutput('count', String(result.fires.length));
+  setOutput('fires', JSON.stringify(result.fires));
 } catch (err) {
   if (err instanceof ConfigError) {
     console.log(`::error::${err.message.replaceAll('\n', '%0A')}`);

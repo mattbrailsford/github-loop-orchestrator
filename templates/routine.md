@@ -62,3 +62,59 @@ security report, or a run that gave up. The orchestrator ships a skill for this,
 it. Keep the same fields and the same private rule.
 
 The orchestrator itself never notifies anyone. It doesn't know what happened in the run.
+
+## The ticker
+
+Schedule routes (`when: schedule`) need something to say "an hour has passed." GitHub's own
+timer can, but in a public repo GitHub turns it off after 60 days without activity, and its docs
+don't say what counts. Issues and comments may well not. So the default is a second, tiny
+routine whose only job is to tick.
+
+Each hour it sends every hub a `loop-tick` event. The hub's matcher works out which schedule
+routes are due and fires the worker routine for them. The ticker decides nothing itself.
+
+| Field | Value |
+|---|---|
+| Name | `loop ticker` |
+| Environment | any. It needs no skills, so no Setup script. |
+| Model | the smallest, such as `claude-haiku-4-5-20251001`. It makes one API call per hub. |
+| Tools | `Bash` |
+| Repos (sources) | none |
+| Connections | GitHub, with permission to send `repository_dispatch` to each hub |
+| Trigger | a schedule, every hour, on the hour |
+
+One ticker serves every hub on the account. Adding a hub means adding a line to its prompt.
+
+Stored prompt, with your hubs listed:
+
+```text
+You are the loop ticker. Your only job: send a repository_dispatch event with event_type "loop-tick" and an empty client_payload to each repo below, then stop.
+
+- owner/tracker-one
+- owner/tracker-two
+
+For each repo, run: gh api repos/<repo>/dispatches -f event_type=loop-tick
+If one fails, still try the rest, then say which failed and why. Do nothing else: don't read issues, don't post anything, don't use other tools.
+```
+
+**What it costs:** one short session an hour, so 24 a day, however many hubs it ticks. On the
+smallest model that's small, but not zero.
+
+**What can go wrong:**
+
+- **It stops quietly** if the routine is paused or its GitHub access lapses, and missed
+  schedules look like quiet days. A schedule route can't notice, since it needs a tick to run.
+  The check has to come from outside the loop: see
+  [Noticing when ticks stop](../docs/TICK-SOURCES.md#noticing-when-ticks-stop).
+- **A late or missed tick skips that hour.** The matcher only knows the current hour, so a route
+  due at 07:00 doesn't run at 08:00 to catch up.
+- **Ticker or GitHub timer, not both.** Both firing means each due route runs twice. A private
+  repo can use GitHub's timer instead (see `templates/caller.yml`), since the 60-day rule only
+  applies to public repos.
+
+**Other ways to tick:** a private repo's GitHub timer, your cloud's scheduler, a cron job, or a
+hosted cron service can all send the same event. They're compared in
+[`docs/TICK-SOURCES.md`](../docs/TICK-SOURCES.md), with where each keeps its token.
+
+**Unverified:** how often a routine may be scheduled, and that its GitHub connection can call
+`gh api ... /dispatches`. Test both before relying on it.

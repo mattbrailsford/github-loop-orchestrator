@@ -11,8 +11,15 @@ on:
   # Safe here because the orchestrator never checks out or runs the PR's code.
   pull_request_target:
     types: [opened, labeled]
+  # loop-edge: one route starting the next. loop-tick: the ticker routine's hourly tick, for
+  # schedule routes. Only the hub needs loop-tick; a code repo ignores it.
   repository_dispatch:
-    types: [loop-edge]
+    types: [loop-edge, loop-tick]
+  # Schedule routes without a ticker: GitHub's own hourly timer. Use one or the other, not both,
+  # or each due route runs twice. In a public repo GitHub turns this off after 60 days without
+  # activity, which is why the ticker exists.
+  # schedule:
+  #   - cron: "0 * * * *"
 
 permissions:
   contents: read

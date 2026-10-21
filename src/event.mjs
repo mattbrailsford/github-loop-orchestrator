@@ -30,9 +30,34 @@ function fromItem(payload, item, kind, when) {
   };
 }
 
+// A scheduled run from either source: GitHub's own timer, or a loop-tick from a ticker routine.
+function scheduled(workflowRepo, now, source) {
+  return {
+    when: 'schedule',
+    kind: null,
+    repo: workflowRepo,
+    number: null,
+    author: '',
+    labels: [],
+    state: null,
+    actor: '',
+    senderIsBot: false,
+    label: '',
+    body: '',
+    commentId: '',
+    commentBody: '',
+    edge: null,
+    time: now,
+    source,
+  };
+}
+
 // Turns a GitHub event into the one shape the matcher reads. null means "not an event we route".
-export function normalizeEvent(eventName, payload, workflowRepo) {
+export function normalizeEvent(eventName, payload, workflowRepo, now = new Date()) {
   const name = eventName === 'pull_request_target' ? 'pull_request' : eventName;
+
+  if (name === 'schedule') return scheduled(workflowRepo, now, 'github-schedule');
+  if (name === 'repository_dispatch' && payload.action === 'loop-tick') return scheduled(workflowRepo, now, 'tick');
 
   if (name === 'issues') {
     if (!['opened', 'labeled'].includes(payload.action)) return null;
