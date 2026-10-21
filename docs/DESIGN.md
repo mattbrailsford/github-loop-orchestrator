@@ -30,7 +30,7 @@ How the orchestrator works, what it owns, and what it leaves to each repo. Anyth
   exception is a schedule tick, which fires every schedule route due that hour.
 - **Untrusted text never goes into a prompt.** Issue titles, bodies, and comments are written by
   anyone. The prompt carries IDs only, and the routine fetches the text itself
-  ([section 5](#5-the-prompt)). The one exception is a maintainer's own request after a mention,
+  ([section 5](#5-the-prompt)). The one exception is a maintainer's own request after a mention or a 🤖,
   which counts as an instruction, not data ([`{request}`](#the-request-placeholder)).
 
 ## 2. The pieces
@@ -256,6 +256,8 @@ The label names above are only an example. The orchestrator treats them as strin
 - **`if`** holds conditions. All must pass.
 - **`prompt`** is a template. Only the placeholders in [section 5](#5-the-prompt) are allowed.
 - **`bots`** lists extra logins to treat as bots, on top of GitHub's own `Bot` type.
+- **`routine_login`** names the account the routine posts as, when that's a person's. Its events
+  only count when addressed ([section 4](#addressing-the-routine)).
 - **`code_repo`** says where the code lives, if not here. Optional, at the top or on one route.
   Setting it makes this config the hub for that repo's events too
   ([section 2](#when-issues-and-code-live-in-different-repos)).
@@ -313,6 +315,7 @@ Adding an event later is a change to this list, the schema, and the tests.
 | `actor` | who caused the event: `maintainer` (write access or above), `author` (opened the issue or PR), `maintainer_or_author`, or `anyone` |
 | `comment_starts_with` | the comment begins with this text, such as `/retry` |
 | `mentions` | the comment, or the body of a newly opened issue or PR, mentions one of these logins, such as `claude` |
+| `addressed_with` | the comment, or the body of a newly opened issue or PR, starts with one of these prefixes, such as `🤖` ([below](#addressing-the-routine)) |
 | `state` | `open` or `closed` |
 | `in` | which repo the event came from: `tracker` or `code` ([section 2](#when-issues-and-code-live-in-different-repos)) |
 
@@ -336,16 +339,52 @@ on `issue_comment.created`, `pr_comment.created`, and on the body for `issues.op
 - **The request is captured.** The text after the mention goes to the prompt as `{request}`
   ([section 5](#the-request-placeholder)).
 
-**Don't also install the Claude app's own `@claude` workflow.** Installing the Claude GitHub app
-offers to add a workflow that answers `@claude` itself. With both in place, one mention gets two
-replies. The app is still needed for the bot's identity; only its workflow file is left out.
+**Mentions need the routine to have its own account.** While the routine posts as a person
+(see below), use `addressed_with` instead. If a mention route is added later, leave out the
+Claude app's own `@claude` workflow, or one mention gets two replies.
+
+### Addressing the routine
+
+A routine posts through the Claude GitHub app with the account of the person who set it up,
+not as a bot. A test on a real repo showed its comments under that person's login, marked "via
+Claude." So by login alone, the orchestrator can't tell the routine from that person. Two
+settings handle it:
+
+- **`routine_login`** names the account the routine posts as. Every event from that account is
+  ignored, comments and labels alike, unless it addresses the routine.
+- **`addressed_with: ["🤖", ":robot:"]`** is how a person addresses it: their comment starts with
+  one of the prefixes. The routine is told never to start a comment that way, so it can't
+  address itself.
+
+The rules:
+
+- **The first line that counts must start with the prefix.** Blank lines, quotes, and code
+  blocks above it are skipped, so a quote-reply followed by `🤖 approve` works. `Thanks 🤖
+  approve` doesn't, and neither does a 🤖 on a later line.
+- **Claude Code's sign-off isn't addressing.** Claude Code often signs what it writes with
+  "🤖 Generated with Claude Code." A comment whose first line is that sign-off doesn't count.
+  It usually comes last anyway, where it never counts.
+- **Maintainer-only.** A route with `addressed_with` must also say `actor: maintainer`.
+- **The rest is the request.** Everything after the prefix goes to the prompt as `{request}`,
+  as for mentions. The orchestrator doesn't parse it, so a typo can't stop a match; the model
+  reads it.
+- **Use mentions or `addressed_with` on a route, not both.**
+- **Labels are best kept as outputs.** A route that starts from a label can't tell the routine's
+  label changes from the person's. With `routine_login` set those are ignored anyway, but so are
+  that person's own label changes. Approving with a 🤖 comment avoids the question.
+- **A side effect:** an issue opened from the `routine_login` account isn't routed unless its body
+  starts with the prefix.
+
+If the routine later gets its own identity (a GitHub App or a machine user), set `routine_login`
+to that login, or put it in `bots`. Mentions then become an option too.
 
 **`maintainer` means write access**, checked with GitHub's
 `collaborators/<login>/permission` API. A comment's `author_association` isn't enough on its own:
 `MEMBER` means a member of the org, which doesn't always mean write access to this repo.
 
 **Bots never match**, whatever the route says. An event whose sender has GitHub's `Bot` type, or
-appears in `bots`, stops before matching. The one way in for a routine is an edge.
+appears in `bots`, stops before matching. The ways in for a routine are an edge, and, from its
+`routine_login`, a comment addressed to it.
 
 ## 5. The prompt
 
@@ -369,7 +408,7 @@ in a fixed set of placeholders:
 | `{comment_id}` | the comment's ID, if any |
 | `{hop}` | how many edges led here (0 for a GitHub event) |
 | `{next_hop}` | `{hop}` plus one: the hop to send with the next edge |
-| `{request}` | what a maintainer asked for after a mention; only in `mentions` routes ([below](#the-request-placeholder)) |
+| `{request}` | what a maintainer asked for after a mention or prefix; only in `mentions` and `addressed_with` routes ([below](#the-request-placeholder)) |
 | `{time}` | for schedule routes, the hour it ran for, like `2026-10-19T07:00Z` |
 
 There's deliberately no placeholder for a title, body, or general comment text. Anyone can write
@@ -540,7 +579,8 @@ which timer it is.
 
 All of these work without knowing what any route does.
 
-- **Bots never match** ([section 4](#4-matching)).
+- **Bots never match** ([section 4](#4-matching)), and the routine's own account only counts
+  when addressed ([section 4](#addressing-the-routine)).
 - **One routing run per issue or PR at a time.** A `concurrency` group keyed on the repo and the
   number queues a second event rather than racing the first. The repo is part of the key because
   a hub sees issue #12 from the tracker and PR #12 from the code repo, and those mustn't block
@@ -594,11 +634,8 @@ The [example](../examples/triage/) shows one repo's answers.
 
 ## 10. Open questions
 
-1. **Who does the routine post as?** This one matters most. If it posts with a person's GitHub
-   account, its comments look like that person's. Then "bots never match" can't catch them, and
-   a routine's own comment could match a maintainer route. **Unverified:** how a hosted routine
-   authenticates to GitHub, and whether it can post as `claude[bot]` through the Claude GitHub
-   app. If it can't, the fallback is listing the routine's account in `bots`, which means that
-   person's own comments are ignored too.
-   [`templates/routine.md`](../templates/routine.md#check-whose-name-the-routine-posts-with) has
-   a three-step test that answers this on a test repo.
+1. **A routine of its own identity.** Tested: a routine posts as the person who set it up,
+   through the Claude app. `routine_login` and `addressed_with` make that safe. A dedicated
+   identity (a GitHub App or a machine user) would put its comments under its own name and allow
+   mentions. **Unverified:** how a hosted routine is given its own GitHub credentials
+   ([`templates/routine.md`](../templates/routine.md#if-those-permissions-are-too-much-or-you-want-a-real-bot)).

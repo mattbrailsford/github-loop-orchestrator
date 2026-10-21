@@ -40,7 +40,7 @@ const COMMENT_EVENTS = new Set(['issue_comment.created', 'pr_comment.created']);
 const OPENED_EVENTS = new Set(['issues.opened', 'pull_request.opened']);
 const LABELED_EVENTS = new Set(['issues.labeled', 'pull_request.labeled']);
 
-const TOP_KEYS = new Set(['version', 'bots', 'max_hops', 'code_repo', 'routes']);
+const TOP_KEYS = new Set(['version', 'bots', 'routine_login', 'max_hops', 'code_repo', 'routes']);
 const ROUTE_KEYS = new Set(['name', 'when', 'if', 'prompt', 'allow_from', 'code_repo', 'cron']);
 const CONDITION_KEYS = new Set([
   'label',
@@ -49,6 +49,7 @@ const CONDITION_KEYS = new Set([
   'actor',
   'comment_starts_with',
   'mentions',
+  'addressed_with',
   'state',
   'in',
 ]);
@@ -128,6 +129,20 @@ function checkConditions(route, where, errors) {
       errors.push(`${where}.if.mentions: a mentions route must also say "actor: maintainer"`);
     }
   }
+  if ('addressed_with' in cond) {
+    if (!COMMENT_EVENTS.has(route.when) && !OPENED_EVENTS.has(route.when)) {
+      errors.push(`${where}.if.addressed_with: only works with a comment event or *.opened`);
+    }
+    if (!isStringArray(cond.addressed_with) || !cond.addressed_with.every((p) => p.trim().length > 0 && p.length <= 20)) {
+      errors.push(`${where}.if.addressed_with: must be a list of short prefixes, like "🤖"`);
+    }
+    if (cond.actor !== 'maintainer') {
+      errors.push(`${where}.if.addressed_with: an addressed_with route must also say "actor: maintainer"`);
+    }
+    if ('mentions' in cond) {
+      errors.push(`${where}.if: use mentions or addressed_with, not both`);
+    }
+  }
   if ('state' in cond && !['open', 'closed'].includes(cond.state)) {
     errors.push(`${where}.if.state: must be "open" or "closed"`);
   }
@@ -146,8 +161,8 @@ function checkPrompt(route, where, errors) {
     else if (route.when === 'schedule' && !SCHEDULE_PLACEHOLDERS.has(name)) {
       errors.push(`${where}.prompt: "{${name}}" is about one issue or PR, so a schedule route can't use it`);
     }
-    if (name === 'request' && !(isObject(route.if) && 'mentions' in route.if)) {
-      errors.push(`${where}.prompt: "{request}" only works in a route with a "mentions" condition`);
+    if (name === 'request' && !(isObject(route.if) && ('mentions' in route.if || 'addressed_with' in route.if))) {
+      errors.push(`${where}.prompt: "{request}" only works in a route with a "mentions" or "addressed_with" condition`);
     }
   }
 }
@@ -169,6 +184,9 @@ export function validateConfig(config) {
   }
   if ('code_repo' in config && !(typeof config.code_repo === 'string' && REPO_RE.test(config.code_repo))) {
     errors.push('code_repo: must be "owner/name"');
+  }
+  if ('routine_login' in config && !(typeof config.routine_login === 'string' && LOGIN_RE.test(config.routine_login))) {
+    errors.push('routine_login: must be the GitHub login the routine posts as, without "@"');
   }
 
   if (!Array.isArray(config.routes) || config.routes.length === 0) {

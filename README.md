@@ -23,6 +23,7 @@ Comments carry the conversation. Both fire events.
 | It knows | It doesn't know |
 |---|---|
 | GitHub events: issues and PRs opened, labeled, commented on, plus an hourly schedule | what any label means |
+| When a comment is addressed to the routine (it starts with 🤖, say) | what the comment asks for |
 | How to match an event against the repo's config | what a routine does, or which skills it runs |
 | Who did it: a maintainer, the author, someone else, or a bot | the repo's product, stack, or workflow |
 | How to fire a hosted routine with a prompt | what gets posted back, or in what format |
@@ -90,11 +91,11 @@ label meanings live there, not here.
    A private repo can use GitHub's own timer instead (commented out in the caller template).
    Other tick sources, and where each keeps its token, are in
    [`docs/TICK-SOURCES.md`](docs/TICK-SOURCES.md).
-6. **Install the Claude GitHub app**, so the routine's comments come from `claude[bot]`. Skip its
-   `@claude` workflow and its API key secret, then check whose name the routine actually posts
-   with. All three are in
-   [`templates/routine.md`](templates/routine.md#installing-the-claude-github-app). Do this check
-   first: if the routine posts as you, the loop can't tell you apart from it.
+6. **Install the Claude GitHub app** on the repo. Routines reach GitHub through it, and can't
+   be created without it. Skip its own `@claude` workflow and API key secret. Its comments come
+   from your account, not a bot, so set `routine_login` to your login and talk to the routine by
+   starting a comment with 🤖 (an `addressed_with` route). Details are in
+   [`templates/routine.md`](templates/routine.md#installing-the-claude-github-app).
 
 **Separate tracker?** Do steps 2 and 3 in the code repo too, and set `config_repo` in its caller
 to the tracker. Only the tracker has a `loop-orchestrator.yml`. The routine's repos must include
@@ -135,7 +136,7 @@ config and needs `yq`; it skips without it locally, and runs in CI.
 - [x] The orchestrator: matching, mentions, edges, the hub, schedules, and the workflow, with tests
 - [ ] Run it on a test repo. Until then, the workflow files are untested on GitHub.
 - [ ] Triage skills that support what the example needs (`--unattended`, `--propose`,
-      `--finalize`)
+      `--respond`)
 
 **Not proven yet**, each marked in the design:
 
@@ -148,8 +149,9 @@ config and needs `yq`; it skips without it locally, and runs in CI.
 
 Explained in the design.
 
-1. Who does the routine post as? If it's a person's account, the orchestrator can't tell the
-   routine's comments from that person's.
+1. A routine posts as the person who set it up, so the loop uses `routine_login` and 🤖 to tell
+   them apart. A dedicated identity for the routine (its own GitHub App or a machine user) would
+   be cleaner; how a routine gets its own GitHub credentials is still untested.
 
 ## Acknowledgments
 

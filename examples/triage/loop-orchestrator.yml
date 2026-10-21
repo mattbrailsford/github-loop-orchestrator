@@ -1,10 +1,15 @@
 # Routes for an issue triage loop. Copy to .github/loop-orchestrator.yml.
 # The orchestrator only matches these strings. What the labels mean lives in the triage skills.
 # Skill names have no plugin prefix, since templates/cloud-setup.sh copies skills in bare.
+#
+# Maintainers talk to the routine by starting a comment with 🤖. Labels are outputs only:
+# the routine sets them, and no route starts from one, because the routine posts with a
+# person's account and its own label changes would look like that person's.
 version: 1
 bots: ["claude[bot]"]
+routine_login: your-login   # the account the routine posts as; yours, unless it has its own
 max_hops: 5
-# code_repo: umbraco/Umbraco.Forms   # set when this tracker is separate from the code
+# code_repo: owner/code-repo   # set when this tracker is separate from the code
 
 routes:
   - name: new-issue
@@ -15,39 +20,19 @@ routes:
       Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}).
       Route: {route}.
 
-  # Approving is adding a state label. A different label than proposed is also fine.
-  - name: maintainer-decides
-    when: issues.labeled
-    if:
-      label: "state/*"
-      has_label: ["state/drafted"]
-      actor: maintainer
-    prompt: >-
-      Run /issue-triage {number} --unattended --finalize for {repo} (code in {code_repo}).
-      The maintainer chose {label}.
-      If the final state is state/needs-investigation, fire a loop-edge to route
-      'investigate' with from '{route}' and hop {next_hop}.
-      Route: {route}.
-
-  - name: maintainer-corrects
+  # Everything a maintainer says to the routine: approve, pick another state, correct it, or
+  # ask for a fresh look. The skill reads the request, typos and all, and acts on it.
+  - name: maintainer-says
     when: issue_comment.created
     if:
-      has_label: ["state/drafted"]
+      addressed_with: ["🤖", ":robot:"]
       actor: maintainer
     prompt: >-
-      Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}),
-      using maintainer comment {comment_id} as a correction.
-      Route: {route}.
-
-  # On any issue, not just drafted ones: a maintainer asks for a fresh look.
-  - name: maintainer-asks
-    when: issue_comment.created
-    if:
-      mentions: [claude]
-      actor: maintainer
-    prompt: >-
-      Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}).
-      Take this maintainer request into account: {request}
+      Run /issue-triage {number} --unattended --respond for {repo} (code in {code_repo}).
+      A maintainer replied to its proposal; act on what they asked: {request}
+      Update the proposal comment to say what you understood, so a misread shows straight away.
+      If the issue ends in state/needs-investigation, fire a loop-edge to route 'investigate'
+      with from '{route}' and hop {next_hop}.
       Route: {route}.
 
   - name: reporter-replies
@@ -63,7 +48,7 @@ routes:
   # Investigating only reads and runs code, so it needs no second approval.
   - name: investigate
     when: edge
-    allow_from: [maintainer-decides]
+    allow_from: [maintainer-says]
     prompt: >-
       Run /investigate-bug {number} --unattended --propose for {repo} (code in {code_repo}).
       Hop {hop}.

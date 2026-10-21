@@ -1,7 +1,8 @@
 # Example: issue triage
 
 A worked example, and the first thing to prove on a real repo. A new issue gets a proposed
-triage. A maintainer approves it with a label, or corrects it with a reply. The routine follows.
+triage. A maintainer answers with a comment that starts with 🤖, to approve it, pick another
+state, or correct it. The routine follows.
 
 It assumes two skills in the routine: `/issue-triage`, which classifies an issue, and
 `/investigate-bug`, which finds a bug's cause. Use your own; the names only have to match the
@@ -14,16 +15,36 @@ gets posted, and how. The orchestrator only sees the routes in
 | Route | Starts when | The routine |
 |---|---|---|
 | `new-issue` | an issue opens with no `state/*` label | proposes a triage |
-| `maintainer-decides` | a maintainer adds a `state/*` label to a drafted issue | finalizes it, for the state they chose |
-| `maintainer-corrects` | a maintainer replies on a drafted issue | proposes again, using the reply |
-| `maintainer-asks` | a maintainer mentions `@claude` on any other issue | proposes a fresh triage, using what they asked |
+| `maintainer-says` | a maintainer comments starting with 🤖 | does what they asked: approves, picks another state, corrects, or looks again |
 | `reporter-replies` | the reporter replies on a drafted or needs-info issue | proposes again, using the new detail |
-| `investigate` | an edge from `maintainer-decides`, when the final state is `state/needs-investigation` | investigates, and proposes the result |
+| `investigate` | an edge from `maintainer-says`, when the issue ends in `state/needs-investigation` | investigates, and proposes the result |
 | `stale-drafts` | weekday mornings, 07:00 UTC | sends maintainers one reminder about proposals waiting more than 5 days |
 
 Investigating only reads the code and runs it, so that edge runs without a second approval.
 Nothing in these routes writes code. `stale-drafts` needs the ticker routine, or GitHub's
 timer in a private repo ([`templates/routine.md`](../../templates/routine.md#the-ticker)).
+
+## Talking to the routine
+
+The routine posts with a person's account, usually the maintainer's own, through the Claude
+GitHub app. So the orchestrator can't tell its comments and labels from that person's by who
+made them. This example works around that:
+
+- **A maintainer starts a comment with 🤖 to address the routine.** Nothing else from that
+  account counts. `routine_login` in the config names the account.
+- **The routine never starts a comment with 🤖**, so its own comments start nothing.
+- **Labels are outputs only.** The routine sets them, and no route starts from a label, so its
+  own label changes can't start anything either.
+- **Typos are fine.** The orchestrator only checks for 🤖. Everything after it goes to the
+  routine as the request, and the model reads it: "🤖 aprove" works.
+- **The routine says what it understood.** It updates the proposal comment ("Approved as needs
+  investigation"), so a misread shows straight away, and another 🤖 comment fixes it.
+
+One side effect: an issue opened from the routine's account isn't triaged on its own, since
+that account's events only count when addressed. Start its body with 🤖 to have it triaged.
+
+If the routine later gets its own account or GitHub App, set `routine_login` to that, and
+nothing else here needs to change ([`templates/routine.md`](../../templates/routine.md#if-those-permissions-are-too-much-or-you-want-a-real-bot)).
 
 ## A separate tracker
 
@@ -46,17 +67,17 @@ prompts, and have the skills leave paths and code out of public comments when it
 
 | Label | Means | Set by |
 |---|---|---|
-| `state/needs-info` | waiting on the reporter | a maintainer, approving a proposal |
-| `state/needs-investigation` | looks real, not proven yet | a maintainer, approving a proposal |
-| `state/needs-decision` | clear, waiting on a maintainer to agree | a maintainer, approving a proposal |
-| `state/blocked` | waiting on something outside the project | a maintainer, approving a proposal |
-| `state/ready` | verified and ready to fix | a maintainer, approving a proposal |
-| `state/drafted` | the routine proposed a state and is waiting for a maintainer | the routine only |
+| `state/needs-info` | waiting on the reporter | the routine, once a maintainer approves |
+| `state/needs-investigation` | looks real, not proven yet | the routine, once a maintainer approves |
+| `state/needs-decision` | clear, waiting on a maintainer to agree | the routine, once a maintainer approves |
+| `state/blocked` | waiting on something outside the project | the routine, once a maintainer approves |
+| `state/ready` | verified and ready to fix | the routine, once a maintainer approves |
+| `state/drafted` | the routine proposed a state and is waiting for a maintainer | the routine |
 
 - An issue has one state label at a time. While it's `state/drafted`, the proposed state lives
   in the comment.
-- A maintainer approves by adding the label they agree with. The routine removes
-  `state/drafted`.
+- A maintainer approves with a 🤖 comment. The routine then swaps `state/drafted` for the
+  agreed state. Setting a label by hand does nothing to the loop.
 - An issue with `state/drafted` is never proposed again unless someone replies. That stops the
   same issue being triaged, and paid for, twice.
 
@@ -103,9 +124,9 @@ stops.
 | Route | Claim, done first | Why a second run stops |
 |---|---|---|
 | `new-issue` | add `state/drafted`, right after the security check | the route needs no `state/*` label |
-| `maintainer-decides` | remove `state/drafted` | the route needs `state/drafted` |
-| `maintainer-corrects`, `maintainer-asks`, `reporter-replies` | none | a second run only edits the same one comment again, so it costs tokens but posts nothing new |
-| `investigate` | none | an edge fires once, from `maintainer-decides` |
+| `maintainer-says` | none | a second run edits the same one comment again; asked to approve an issue that's no longer drafted, it does nothing |
+| `reporter-replies` | none | a second run only edits the same one comment again, so it costs tokens but posts nothing new |
+| `investigate` | none | an edge fires once, from the run that approved |
 
 The security check comes before the claim on purpose. Claiming first would put a label on a
 possible security report.
@@ -127,11 +148,14 @@ That covers the rare case where push was unavailable.
 
 | To | Do this |
 |---|---|
-| Approve | add the proposed `state/*` label |
-| Choose another state | add a different `state/*` label |
-| Correct it | reply in plain words ("dupe of #41", "this is expected") |
+| Approve | comment `🤖 approve`, or `🤖 yes`, or anything that means it |
+| Choose another state | comment `🤖 needs info`, `🤖 ready`, and so on |
+| Correct it | comment in plain words: `🤖 dupe of #41`, `🤖 this is expected behavior` |
+| Ask for a fresh look | `🤖 look again, the stack trace is different` |
 | Close it | close the issue; no route matches a closed issue's events |
 | Leave it | nothing; it waits as `state/drafted` |
+
+A comment without 🤖 is just a comment. The routine never sees it.
 
 ## What the skills need to support
 
@@ -140,18 +164,21 @@ run from these routes, they need:
 
 1. **`--unattended`:** no questions, one issue per run, and a clean stop when something only a
    person could supply is missing.
-2. **`--propose` and `--finalize`:** the approval moves from the chat to the tracker.
-   `--propose` posts the marked comment and `state/drafted`. `--finalize` applies the label a
-   maintainer chose, and rewrites the comment for it.
-3. **The same two flags on the investigation skill,** so its result is proposed the same way.
-4. **Claim first** in `--propose` and `--finalize`, as [Claiming an issue](#claiming-an-issue)
-   says, after the security check and before any other work.
-5. **A private notification for security flags,** through `/loop-notify`, in place of telling
+2. **`--propose` and `--respond`:** the approval moves from the chat to the tracker.
+   `--propose` posts the marked comment and `state/drafted`. `--respond` reads a maintainer's
+   request in plain words, acts on it (approve, another state, a correction, a fresh look), and
+   updates the comment to say what it understood.
+3. **`--propose` on the investigation skill,** so its result is proposed the same way.
+4. **Claim first** in `--propose`, as [Claiming an issue](#claiming-an-issue) says, after the
+   security check and before any other work.
+5. **Never start a comment with 🤖,** which would address the routine itself.
+6. **A private notification for security flags,** through `/loop-notify`, in place of telling
    someone in the chat. Without it, an unattended run has no private way to tell anyone, so it
    stops and leaves the issue unlabeled.
-6. **Respecting `{code_private}`:** no file paths or code in public comments when it's `true`.
-7. **Tests** for each: an unattended run asks no questions, `--propose` never sets a final state,
-   the claim comes before the work, and a security report gets no label.
+7. **Respecting `{code_private}`:** no file paths or code in public comments when it's `true`.
+8. **Tests** for each: an unattended run asks no questions, `--propose` never sets a final state,
+   `--respond` acts on a misspelled approval, the claim comes before the work, and a security
+   report gets no label.
 
 Firing the `investigate` edge is in the route's prompt, not the skill. The skill doesn't need to
 know what runs next.
@@ -175,15 +202,19 @@ know what runs next.
 ## What "it works" means
 
 - [ ] A new issue gets `state/drafted` and one marked comment within a few minutes.
-- [ ] Adding the proposed label edits that comment and removes `state/drafted`. No new comment.
-- [ ] Adding a different label rewrites the comment for that state.
-- [ ] A maintainer's reply ("duplicate of #1") rewrites the comment to say so.
-- [ ] A reply from someone who is neither a maintainer nor the reporter starts nothing.
-- [ ] The routine's own comments and labels start nothing.
+- [ ] `🤖 approve` edits that comment and swaps `state/drafted` for the proposed state. No new
+      comment.
+- [ ] `🤖 aprove` (misspelled) does the same.
+- [ ] `🤖 needs info` rewrites the comment for that state.
+- [ ] `🤖 dupe of #1` rewrites the comment to say so.
+- [ ] A maintainer comment without 🤖 starts nothing.
+- [ ] A 🤖 comment from someone without write access starts nothing.
+- [ ] The routine's own comments and labels start nothing, even though they're under your name.
+- [ ] Setting a `state/*` label by hand starts nothing.
 - [ ] Approving `state/needs-investigation` starts the investigation through the edge.
 - [ ] A test issue that reads like a security report gets no comment and no label, and
       maintainers get one push notification, even if two events fire for it.
-- [ ] Two quick labels on one drafted issue produce one finalize, not two.
+- [ ] Two quick `🤖 approve` comments on one drafted issue produce one approval, not two.
 
 ## Before a real tracker
 

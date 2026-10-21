@@ -1,7 +1,8 @@
 export const MAX_REQUEST_LENGTH = 4000;
 
 const FENCE_RE = /^(`{3,}|~{3,})/;
-const LEADING_MENTION_RE = /^\s*@([A-Za-z0-9][A-Za-z0-9-]*(?:\[bot\])?)/;
+const CLAUDE_SIGNOFF_RE = /^\s*_?\*{0,2}Generated (with|by)\b[^\n]*Claude/i;
+const LEADING_MENTION_RE =/^\s*@([A-Za-z0-9][A-Za-z0-9-]*(?:\[bot\])?)/;
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -53,8 +54,33 @@ export function findMention(text, logins) {
   return null;
 }
 
+// The first line that counts (not blank, not a quote, not code) must start with one of the
+// prefixes. A quote-reply above it is fine; the prefix part-way through a line is not.
+export function findAddress(text, prefixes) {
+  const lines = visibleLines(text);
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i] === null || lines[i].trim() === '') continue;
+    const lead = lines[i].length - lines[i].trimStart().length;
+    const rest = lines[i].slice(lead);
+    const prefix = prefixes.find((p) => rest.startsWith(p));
+    if (!prefix) return null;
+    // Claude Code signs what it writes with "🤖 Generated with Claude Code". That's a sign-off,
+    // not someone addressing the routine.
+    if (CLAUDE_SIGNOFF_RE.test(rest.slice(prefix.length))) return null;
+    return { line: i, start: lead, end: lead + prefix.length };
+  }
+  return null;
+}
+
+export function extractAddressedRequest(text, prefixes, max = MAX_REQUEST_LENGTH) {
+  return requestFrom(text, findAddress(text, prefixes), [], max);
+}
+
 export function extractRequest(text, logins, max = MAX_REQUEST_LENGTH) {
-  const hit = findMention(text, logins);
+  return requestFrom(text, findMention(text, logins), logins, max);
+}
+
+function requestFrom(text, hit, logins, max) {
   if (!hit) return null;
   const lines = visibleLines(text);
   const own = new Set(logins.map((l) => l.toLowerCase()));

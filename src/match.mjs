@@ -1,6 +1,6 @@
 import { DEFAULT_MAX_HOPS, codeReposOf, labelMatches, validateConfig } from './config.mjs';
 import { cronDue } from './cron.mjs';
-import { extractRequest, findMention } from './mentions.mjs';
+import { extractAddressedRequest, extractRequest, findAddress, findMention } from './mentions.mjs';
 import { buildPrompt, usesPlaceholder } from './prompt.mjs';
 
 export class ConfigError extends Error {
@@ -45,6 +45,11 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
     const bots = new Set((config.bots ?? []).map(lower));
     if (event.senderIsBot || bots.has(lower(event.actor))) return none('the event came from a bot');
   }
+
+  // The routine may post with a person's account. Its events then count only when that person
+  // addresses the routine on purpose, through an addressed_with route.
+  const fromRoutine =
+    event.when !== 'edge' && event.when !== 'schedule' && !!config.routine_login && lower(event.actor) === lower(config.routine_login);
 
   // Every due route fires, so two schedules that share an hour both run.
   if (event.when === 'schedule') {
@@ -110,6 +115,7 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
   for (const route of candidates) {
     if (route.when !== event.when) continue;
     const c = route.if ?? {};
+    if (fromRoutine && !('addressed_with' in c)) continue;
 
     if ('label' in c && !labelMatches(c.label, event.label)) continue;
     if ('has_label' in c && !event.labels.some((l) => c.has_label.some((p) => labelMatches(p, l)))) continue;
@@ -118,6 +124,7 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
     if ('in' in c && !(c.in === 'tracker' ? inTracker : inCode)) continue;
     if ('comment_starts_with' in c && !event.commentBody.trimStart().startsWith(c.comment_starts_with)) continue;
     if ('mentions' in c && !findMention(mentionText(), c.mentions)) continue;
+    if ('addressed_with' in c && !findAddress(mentionText(), c.addressed_with)) continue;
     if ('actor' in c && c.actor !== 'anyone') {
       const r = await getRole();
       const ok =
@@ -153,10 +160,16 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
       hop,
       next_hop: hop + 1,
     };
-    const request = 'mentions' in c ? extractRequest(mentionText(), c.mentions) : null;
+    const request =
+      'mentions' in c
+        ? extractRequest(mentionText(), c.mentions)
+        : 'addressed_with' in c
+          ? extractAddressedRequest(mentionText(), c.addressed_with)
+          : null;
 
     return one(route.name, buildPrompt(route.prompt, values, request), tellNumber(`matched route "${route.name}"`));
   }
 
+  if (fromRoutine) return none(tellNumber("ignored: from the routine's own account, and not addressed to it"));
   return none(tellNumber(`no route matched ${event.when}`));
 }
