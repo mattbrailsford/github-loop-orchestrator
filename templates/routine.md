@@ -87,6 +87,36 @@ Say that plainly to whoever approves the install. Contents and workflows write t
 the app can change code and CI. What the routine actually does with it is limited by its tools
 and its stored prompt, not by the app.
 
+### If those permissions are too much
+
+Use your own bot identity instead. Either one works with the orchestrator:
+
+| Option | What it is | Permissions | Login to add to `bots` |
+|---|---|---|---|
+| **Your own GitHub App** | an app you register, installed only on the loop's repos | only what you pick | `your-app-name[bot]` |
+| **A machine user** | a separate GitHub user, used only by the routine | its role on each repo, plus a token scoped to those repos | its login |
+
+For this loop, the routine needs to read and write **issues** and **pull requests**, read
+**contents**, and, for edges and the ticker, send `repository_dispatch`. GitHub's docs are
+believed to list that last one as contents write; check before you rely on it.
+
+- **Your own GitHub App:** [registering a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app).
+  An app's events show as a bot to GitHub, so the orchestrator ignores them even before you add
+  its login to `bots`.
+- **A machine user:** [GitHub's account types](https://docs.github.com/en/get-started/learning-about-github/types-of-github-accounts),
+  which covers machine users (GitHub's name for an account that automates work). Its events look like a person's to GitHub, so its login **must**
+  be in `bots`, or the orchestrator treats its comments as human. Use a fine-grained token,
+  scoped to the loop's repos, and note its expiry.
+
+**What changes for the routine:** it has to post with that identity's credentials instead of the
+Claude app's. **Unverified:** how a hosted routine is given its own GitHub credentials, such as a
+token in its environment that its tools use, rather than its built-in GitHub connection. Test
+that first, the same way as below: post one comment, and check the author.
+
+**What you lose:** other Claude features that use the official app, such as Code Review, still
+need it. Choosing your own identity for this loop doesn't stop you installing the official app
+for those.
+
 ### Check whose name the routine posts with
 
 This decides whether the loop can work, so check it before anything else:
@@ -99,8 +129,8 @@ This decides whether the loop can work, so check it before anything else:
 - **`claude[bot]`:** the loop can tell the routine apart from people. Carry on.
 - **Your own account:** the routine posts with your identity, not the app's. Stop here. Listing
   your login in `bots` would make the orchestrator ignore your own replies too, so it isn't a
-  fix. This needs a different way for the routine to post, such as a dedicated bot account or a
-  GitHub App of your own, before the loop is safe to run.
+  fix. Give the routine its own identity first, as
+  [If those permissions are too much](#if-those-permissions-are-too-much) describes.
 
 **Unverified:** which of the two you'll see. Claude's docs say the GitHub Actions integration
 posts as the app, but don't say what a hosted routine does.
