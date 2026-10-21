@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// Usage: match.mjs --config <config.json> --event-name <name> --event-path <payload.json> [--hub owner/name]
+// Usage: match.mjs --config <config.json> --event-name <name> --event-path <payload.json> [--hub owner/name] [--out <file>]
+// --out writes the candidates to a file instead of a step output. Prompts carry request text, so
+// they must never travel through env or outputs, which GitHub prints in the log.
 // Reads GITHUB_REPOSITORY, GH_TOKEN, and GITHUB_OUTPUT from the environment.
 // Exit codes: 0 matched or no match, 2 the config is broken, 1 anything else.
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { normalizeEvent } from '../src/event.mjs';
@@ -15,6 +17,7 @@ const { values: args } = parseArgs({
     'event-name': { type: 'string' },
     'event-path': { type: 'string' },
     hub: { type: 'string', default: '' },
+    out: { type: 'string', default: '' },
   },
 });
 
@@ -36,8 +39,7 @@ try {
   const result = await matchEvent({ config, event, workflowRepo, hubRepo, lookup });
   console.log(result.log);
   setOutput('count', String(result.fires.length));
-  setOutput('candidates', JSON.stringify(result.fires));
-  setOutput('config', JSON.stringify(config));
+  if (args.out) writeFileSync(args.out, JSON.stringify(result.fires));
 } catch (err) {
   if (err instanceof ConfigError) {
     console.log(`::error::${err.message.replaceAll('\n', '%0A')}`);

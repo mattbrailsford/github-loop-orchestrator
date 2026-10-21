@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Usage: fire.mjs --candidates <json> --config <json> [--hub owner/name]
+// Usage: fire.mjs --candidates <file> --config <file> [--hub owner/name]
 // Runs the match step's candidates one at a time: checks and adds the claim, reacts, fires the
 // routine, and catches up on comments left waiting. The workflow runs it one item at a time.
 // Reads GITHUB_REPOSITORY, GH_TOKEN, LOOP_FIRE_URL, and LOOP_FIRE_TOKEN from the environment.
 // Exit codes: 0 done, 1 a fire failed or something broke.
+import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { runCandidates } from '../src/fire.mjs';
 import { githubLookup, githubWriter, routineFirer } from '../src/github.mjs';
@@ -24,8 +25,8 @@ try {
     throw new Error('LOOP_FIRE_URL or LOOP_FIRE_TOKEN is not set on this repo');
   }
   const ok = await runCandidates({
-    candidates: JSON.parse(args.candidates),
-    config: JSON.parse(args.config),
+    candidates: JSON.parse(readFileSync(args.candidates, 'utf8')),
+    config: JSON.parse(readFileSync(args.config, 'utf8')),
     workflowRepo,
     hubRepo,
     lookup: githubLookup({ token: process.env.GH_TOKEN, warn }),
