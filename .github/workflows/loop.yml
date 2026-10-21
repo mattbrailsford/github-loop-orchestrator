@@ -1,0 +1,111 @@
+name: loop-orchestrator (reusable)
+
+# Matches one GitHub event against the hub's .github/loop-orchestrator.yml and, on a match,
+# fires the repo's hosted routine with that route's prompt. It never writes to GitHub.
+# A repo calls this from a small caller workflow; see templates/caller.yml.
+
+on:
+  workflow_call:
+    inputs:
+      config_repo:
+        description: >-
+          The hub repo whose config to use, as owner/name. Leave empty when this repo holds its
+          own config. A code repo with a separate tracker points this at the tracker.
+        required: false
+        type: string
+        default: ""
+      orchestrator_ref:
+        description: Which ref of the orchestrator's scripts to run.
+        required: false
+        type: string
+        default: main
+    secrets:
+      LOOP_FIRE_URL:
+        description: The routine's fire URL.
+        required: true
+      LOOP_FIRE_TOKEN:
+        description: The routine's bearer token.
+        required: true
+      LOOP_CONFIG_TOKEN:
+        description: Only needed when config_repo is a private repo this repo's token can't read.
+        required: false
+
+env:
+  # Where this workflow's scripts live. Change it if the orchestrator moves.
+  ORCHESTRATOR_REPO: mattbrailsford/github-loop-orchestrator
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    # Bot events stop here, before a runner does anything else. Edges arrive as
+    # repository_dispatch and are checked by the match script instead.
+    if: github.event_name == 'repository_dispatch' || github.event.sender.type != 'Bot'
+    # Serializes routing per issue or PR. It does not serialize the routine's own run,
+    # which happens after the fire; that's what the prompt's re-check line is for.
+    concurrency:
+      group: loop-${{ github.event.client_payload.repo || github.repository }}-${{ github.event.issue.number || github.event.pull_request.number || github.event.client_payload.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Fetch the orchestrator's scripts
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ORCHESTRATOR_REPO }}
+          ref: ${{ inputs.orchestrator_ref }}
+          path: orchestrator
+
+      - name: Fetch the hub's config
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.config_repo || github.repository }}
+          token: ${{ secrets.LOOP_CONFIG_TOKEN || github.token }}
+          path: hub
+          sparse-checkout: .github/loop-orchestrator.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Convert the config to JSON
+        run: |
+          set -euo pipefail
+          if ! command -v yq >/dev/null; then
+            echo "::error::yq is not on this runner. GitHub's Ubuntu images include it; a self-hosted runner needs it installed."
+            exit 1
+          fi
+          if [ ! -f hub/.github/loop-orchestrator.yml ]; then
+            echo "::error::No .github/loop-orchestrator.yml in ${{ inputs.config_repo || github.repository }}."
+            exit 2
+          fi
+          yq -o=json '.' hub/.github/loop-orchestrator.yml > "$RUNNER_TEMP/loop-config.json"
+
+      - name: Match the event
+        id: match
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HUB: ${{ inputs.config_repo || github.repository }}
+        run: |
+          node orchestrator/bin/match.mjs \
+            --config "$RUNNER_TEMP/loop-config.json" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --hub "$HUB"
+
+      - name: Fire the routine
+        if: steps.match.outputs.route != ''
+        env:
+          FIRE_URL: ${{ secrets.LOOP_FIRE_URL }}
+          TOKEN: ${{ secrets.LOOP_FIRE_TOKEN }}
+          PROMPT: ${{ steps.match.outputs.prompt }}
+          ROUTE: ${{ steps.match.outputs.route }}
+        # A retried fire is safe: the prompt tells the routine to re-check and stop quietly if
+        # the work is already done.
+        run: |
+          set -uo pipefail
+          jq -nc --arg t "$PROMPT" '{text: $t}' | \
+          curl -sS -X POST "$FIRE_URL" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+            -H "Content-Type: application/json" \
+            --fail-with-body \
+            --retry 3 --retry-delay 5 --retry-all-errors \
+            -o /dev/null \
+            -d @-
+          echo "fired the routine for route \"$ROUTE\""

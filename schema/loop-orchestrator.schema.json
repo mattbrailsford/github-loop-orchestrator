@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mattbrailsford/github-loop-orchestrator/schema/loop-orchestrator.schema.json",
+  "title": "loop-orchestrator.yml",
+  "description": "Routes GitHub events to a hosted Claude routine. This schema is for editor help; the match script's own checks (src/config.mjs) are the ones that count.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "routes"],
+  "properties": {
+    "version": { "const": 1 },
+    "bots": {
+      "description": "Logins to treat as bots, on top of GitHub's own Bot type.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "max_hops": {
+      "description": "The most edges one chain may follow before the orchestrator stops it.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 5
+    },
+    "code_repo": {
+      "description": "Where the code lives, when this repo is a separate tracker. Makes this config the hub.",
+      "$ref": "#/$defs/repo"
+    },
+    "routes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/route" }
+    }
+  },
+  "$defs": {
+    "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+    "label": { "type": "string", "pattern": "^[^*]+\\*?$" },
+    "labels": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/label" } },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "when", "prompt"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "when": {
+          "enum": [
+            "issues.opened",
+            "issues.labeled",
+            "issue_comment.created",
+            "pull_request.opened",
+            "pull_request.labeled",
+            "pr_comment.created",
+            "edge"
+          ]
+        },
+        "if": { "$ref": "#/$defs/conditions" },
+        "prompt": {
+          "description": "The prompt template. Placeholders: {repo} {tracker_repo} {code_repo} {code_private} {linked_issue} {number} {kind} {route} {event} {label} {actor} {actor_role} {comment_id} {hop} {next_hop} {request}.",
+          "type": "string",
+          "minLength": 1
+        },
+        "allow_from": {
+          "description": "Edge routes only: the routes allowed to start this one.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "code_repo": { "$ref": "#/$defs/repo" }
+      }
+    },
+    "conditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": { "$ref": "#/$defs/label" },
+        "has_label": { "$ref": "#/$defs/labels" },
+        "lacks_label": { "$ref": "#/$defs/labels" },
+        "actor": { "enum": ["maintainer", "author", "maintainer_or_author", "anyone"] },
+        "comment_starts_with": { "type": "string", "minLength": 1 },
+        "mentions": {
+          "description": "Logins without @. A mentions route must also have actor: maintainer.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*(\\[bot\\])?$" }
+        },
+        "state": { "enum": ["open", "closed"] },
+        "in": { "enum": ["tracker", "code"] }
+      },
+      "dependentSchemas": {
+        "mentions": { "required": ["actor"], "properties": { "actor": { "const": "maintainer" } } }
+      }
+    }
+  }
+}

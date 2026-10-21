@@ -1,0 +1,70 @@
+# Routes for an issue triage loop. Copy to .github/loop-orchestrator.yml.
+# The orchestrator only matches these strings. What the labels mean lives in the triage skills.
+# Skill names have no plugin prefix, since templates/cloud-setup.sh copies skills in bare.
+version: 1
+bots: ["claude[bot]"]
+max_hops: 5
+# code_repo: umbraco/Umbraco.Forms   # set when this tracker is separate from the code
+
+routes:
+  - name: new-issue
+    when: issues.opened
+    if:
+      lacks_label: ["state/*"]
+    prompt: >-
+      Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}).
+      Route: {route}.
+
+  # Approving is adding a state label. A different label than proposed is also fine.
+  - name: maintainer-decides
+    when: issues.labeled
+    if:
+      label: "state/*"
+      has_label: ["state/drafted"]
+      actor: maintainer
+    prompt: >-
+      Run /issue-triage {number} --unattended --finalize for {repo} (code in {code_repo}).
+      The maintainer chose {label}.
+      If the final state is state/needs-investigation, fire a loop-edge to route
+      'investigate' with from '{route}' and hop {next_hop}.
+      Route: {route}.
+
+  - name: maintainer-corrects
+    when: issue_comment.created
+    if:
+      has_label: ["state/drafted"]
+      actor: maintainer
+    prompt: >-
+      Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}),
+      using maintainer comment {comment_id} as a correction.
+      Route: {route}.
+
+  # On any issue, not just drafted ones: a maintainer asks for a fresh look.
+  - name: maintainer-asks
+    when: issue_comment.created
+    if:
+      mentions: [claude]
+      actor: maintainer
+    prompt: >-
+      Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}).
+      Take this maintainer request into account: {request}
+      Route: {route}.
+
+  - name: reporter-replies
+    when: issue_comment.created
+    if:
+      has_label: ["state/drafted", "state/needs-info"]
+      actor: author
+    prompt: >-
+      Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}),
+      using reporter comment {comment_id} as new detail.
+      Route: {route}.
+
+  # Investigating only reads and runs code, so it needs no second approval.
+  - name: investigate
+    when: edge
+    allow_from: [maintainer-decides]
+    prompt: >-
+      Run /investigate-bug {number} --unattended --propose for {repo} (code in {code_repo}).
+      Hop {hop}.
+      Route: {route}.

@@ -1,0 +1,31 @@
+# Copy to .github/workflows/loop.yml in each repo that fires events.
+# Needs two secrets: LOOP_FIRE_URL and LOOP_FIRE_TOKEN, from the routine's "Call via API".
+name: loop
+
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+  # pull_request_target, not pull_request, so PRs from forks still get the secrets.
+  # Safe here because the orchestrator never checks out or runs the PR's code.
+  pull_request_target:
+    types: [opened, labeled]
+  repository_dispatch:
+    types: [loop-edge]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  loop:
+    uses: mattbrailsford/github-loop-orchestrator/.github/workflows/loop.yml@main
+    with:
+      # Leave empty when this repo holds its own .github/loop-orchestrator.yml.
+      # In a code repo whose issues live elsewhere, name the tracker (the hub) here.
+      config_repo: ""
+    secrets:
+      LOOP_FIRE_URL: ${{ secrets.LOOP_FIRE_URL }}
+      LOOP_FIRE_TOKEN: ${{ secrets.LOOP_FIRE_TOKEN }}
