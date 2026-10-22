@@ -31,7 +31,7 @@ test('every prompt carries the run details in a fixed block', async () => {
   const r = await match(commentEvent('@claude look'));
   assert.match(
     r.fires[0].prompt,
-    /<loop-run>\nhub: acme\/tracker\nrepo: acme\/tracker\nnumber: 7\nkind: issue\nroute: maintainer-asks\nhop: 0\nclaim: loop\/working\n<\/loop-run>/,
+    /<loop-run>\nhub: acme\/tracker\nrepo: acme\/tracker\nnumber: 7\nkind: issue\nroute: maintainer-asks\nevent: issue_comment\.created\ncomment: 555\nhop: 0\nclaim: loop\/working\n<\/loop-run>/,
   );
 });
 
@@ -42,12 +42,12 @@ test('an edge run sees its hop, and a schedule run sees its time and no item', a
     { action: 'loop-edge', client_payload: { route: 'investigate', from: 'maintainer-decides', number: 7, hop: 2 } },
     HUB,
   );
-  assert.match((await match(edge, { lookup })).fires[0].prompt, /route: investigate\nhop: 2\n/);
+  assert.match((await match(edge, { lookup })).fires[0].prompt, /route: investigate\nevent: edge\nhop: 2\n/);
 
   const config = baseConfig({ claim: false, routes: [{ name: 's', when: 'schedule', cron: '0 * * * *', prompt: 'x' }] });
   const tick = normalizeEvent('repository_dispatch', { action: 'loop-tick' }, HUB, new Date(min(0)));
   const prompt = (await match(tick, { config })).fires[0].prompt;
-  assert.match(prompt, /<loop-run>\nhub: acme\/tracker\nrepo: acme\/tracker\ntime: 2026-10-21T16:00Z\nroute: s\n<\/loop-run>/);
+  assert.match(prompt, /<loop-run>\nhub: acme\/tracker\nrepo: acme\/tracker\ntime: 2026-10-21T16:00Z\nroute: s\nevent: schedule\n<\/loop-run>/);
 });
 
 test('the label and expiry come from the config', async () => {

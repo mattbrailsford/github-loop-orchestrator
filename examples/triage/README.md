@@ -83,9 +83,11 @@ prompts, and have the skills leave paths and code out of public comments when it
 
 ## The comment
 
-One comment per issue, written with `/loop-comment triage`. The skill finds it again by a hidden
-marker and edits it in place, so the reporter isn't notified every time it changes, and a write
-that errors can't leave two copies.
+The proposal is one comment per issue, written with `/loop-comment triage`. The key makes the
+skill find it again by a hidden marker and edit it in place, so the reporter isn't notified every
+time it changes. Each answer to a maintainer's `🤖` request is a separate short reply, written
+with plain `/loop-comment`, so the maintainer is notified. Either way, a write that errors can't
+leave two copies.
 
 While it's a proposal:
 

@@ -41,6 +41,8 @@ export function runBlock(values, { scheduled = false, claim = null } = {}) {
     `repo: ${values.repo}`,
     ...(scheduled ? [`time: ${values.time}`] : [`number: ${values.number}`, `kind: ${values.kind}`]),
     `route: ${values.route}`,
+    `event: ${values.event}`,
+    ...(values.comment_id ? [`comment: ${values.comment_id}`] : []),
     ...(scheduled ? [] : [`hop: ${values.hop ?? 0}`]),
     ...(claim ? [`claim: ${claim.label}`] : []),
   ];

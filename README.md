@@ -143,7 +143,7 @@ github-loop-orchestrator/
 │   ├── cloud-setup.sh        # what goes in the routine environment's "Setup script" field
 │   └── routine.md            # the worker and ticker routines: config, stored prompts, notifications
 ├── skills/                   # skills every routine gets
-│   ├── loop-comment/         # one reply per item, edited in place, never posted twice
+│   ├── loop-comment/         # a reply per request, or one living comment per key; never twice
 │   ├── loop-edge/            # hands a run on to the next route in a chain
 │   └── loop-notify/          # push notifications, with a private mode
 ├── stacks/
