@@ -43,7 +43,7 @@ const LABELED_EVENTS = new Set(['issues.labeled', 'pull_request.labeled']);
 const TOP_KEYS = new Set(['version', 'bots', 'routine_login', 'max_hops', 'code_repo', 'claim', 'routes']);
 
 export const DEFAULT_CLAIM = { label: 'loop/working', stale_after_minutes: 60 };
-const ROUTE_KEYS = new Set(['name', 'when', 'if', 'prompt', 'allow_from', 'code_repo', 'cron']);
+const ROUTE_KEYS = new Set(['name', 'when', 'if', 'prompt', 'allow_from', 'code_repo', 'cron', 'if_claimed']);
 const CONDITION_KEYS = new Set([
   'label',
   'has_label',
@@ -248,6 +248,21 @@ export function validateConfig(config) {
       if (!isStringArray(route.allow_from)) errors.push(`${where}.allow_from: an edge route needs a list of routes it accepts edges from`);
     } else if ('allow_from' in route) {
       errors.push(`${where}.allow_from: only an edge route takes allow_from`);
+    }
+    // A comment or a new issue that arrives while another run holds the claim waits, and gets
+    // its turn when the claim comes off. A label can't: it stays on, so there's no telling later
+    // whether its event already had a run. So a label route must say it accepts being skipped.
+    if ('if_claimed' in route && route.if_claimed !== 'skip') {
+      errors.push(`${where}.if_claimed: the only value is "skip"`);
+    }
+    if ('if_claimed' in route && !LABELED_EVENTS.has(route.when)) {
+      errors.push(`${where}.if_claimed: only a *.labeled route takes it; other events wait their turn`);
+    }
+    if (LABELED_EVENTS.has(route.when) && config.claim !== false && route.if_claimed !== 'skip') {
+      errors.push(
+        `${where}: a label added while another run holds the claim can't get its turn later. ` +
+          'Add "if_claimed: skip" to accept that it\'s skipped then, or set "claim: false"',
+      );
     }
     checkConditions(route, where, errors);
     checkPrompt(route, where, errors);

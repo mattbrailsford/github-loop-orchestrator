@@ -58,7 +58,7 @@ function addressedConfig(extra = {}) {
         prompt: 'Reporter replied on {number}.',
       },
       { name: 'new-issue', when: 'issues.opened', prompt: 'Triage {number}.' },
-      { name: 'any-label', when: 'issues.labeled', if: { label: 'state/*' }, prompt: 'Label {label}.' },
+      { name: 'any-label', when: 'issues.labeled', if_claimed: 'skip', if: { label: 'state/*' }, prompt: 'Label {label}.' },
     ],
     ...extra,
   });

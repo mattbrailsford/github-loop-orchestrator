@@ -80,7 +80,7 @@ test('a loop-edge reads its payload, defaulting the repo to the workflow repo', 
   );
   assert.equal(e.when, 'edge');
   assert.equal(e.repo, 'acme/tracker');
-  assert.deepEqual(e.edge, { route: 'investigate', from: 'decide', hop: 1 });
+  assert.deepEqual(e.edge, { route: 'investigate', from: 'decide', hop: 1, sentAt: null });
 });
 
 test('a malformed loop-edge is flagged, not routed', () => {

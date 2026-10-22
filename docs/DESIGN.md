@@ -495,8 +495,12 @@ To start the next step on purpose, the routine sends GitHub a `repository_dispat
 type `loop-edge`, with this payload:
 
 ```json
-{ "route": "investigate", "from": "new-issue", "repo": "owner/tracker", "number": 123, "hop": 1 }
+{ "route": "investigate", "from": "new-issue", "repo": "owner/tracker", "number": 123, "hop": 1,
+  "sent_at": "2026-10-21T16:40:30Z" }
 ```
+
+`sent_at` is when the routine sent it. A routine that has to send an edge again reuses the same
+payload, and the orchestrator uses `sent_at` to recognize the repeat ([claims](#claims)).
 
 The orchestrator accepts it only if:
 
@@ -627,9 +631,17 @@ Before firing, the second job adds a claim label to the issue or PR: `claim.labe
   last step, whatever happened. That's the routine's only duty. It never handles other people's
   comments; they get their own turn.
 - **Released on failure.** If the fire fails, the job removes the label at once.
-- **Edges pass it on.** An edge comes from the run holding the claim, so it skips the check, and
-  the run it starts takes the claim over. The prompt tells a run that fires an edge to leave the
-  label on.
+- **Edges pass it on.** An edge comes from the run holding the claim, so a held claim doesn't stop
+  it. The orchestrator takes the claim over afresh (off and back on), so the claim's time marks
+  the handover. The prompt tells a run that fires an edge to leave the label on.
+- **A repeated edge fires once.** If the claim was taken after an edge's `sent_at`, an earlier copy
+  of that edge already handed it on, and the repeat is skipped. The next run in a chain sends its
+  own edge after taking over, so it isn't mistaken for a repeat. An edge without `sent_at` can't be
+  checked, and the log says so.
+- **Label routes can't wait.** A comment or a new issue that arrives during a claim waits its
+  turn. A label can't: it stays on, so later there's no telling whether its event already had a
+  run. So with claims on, a `*.labeled` route must say `if_claimed: skip`, accepting that a label
+  added while another run works is skipped, and logged. Without it, the config is rejected.
 - **Schedules don't claim,** since they aren't about one item.
 - **It can't start anything.** The label and the reactions below are written with the workflow's
   own token, and GitHub never starts workflows from that token's actions. The routine's removal
@@ -647,12 +659,17 @@ Only its own account's reactions count; a person adding the same emoji changes n
 | 🚀 | a run started for it. A comment with 🚀 is never fired again. |
 | 😕 | the routine couldn't be started. Comment again to retry. |
 
+**If the reactions can't be read,** nothing fires for that comment: without them there's no
+telling whether it already ran, and a skipped comment is retried by a later catch-up, while a
+double fire can't be undone.
+
 So a person sees, within seconds, that their comment was heard and when its run began. And the
 orchestrator keeps no state of its own: what's been started is on the comments.
 
 ### Catching up
 
-When the claim label comes off, the orchestrator looks for comments still owed a run:
+When the claim label comes off, the orchestrator looks for what's still owed a run. First the
+issue or PR itself, if it was opened during a claim, then its comments:
 
 - a 👀 but no 🚀 or 😕, so it was left waiting, or
 - posted while the claim was on (from 10 minutes before it went on), with no reaction at all,
@@ -673,11 +690,29 @@ run that died before releasing. It's cleared in two ways:
 
 - **The next event on that item** takes it over, and the stale run's waiting comments follow when
   the new run releases.
-- **Each hourly tick sweeps them,** if the hub has a ticker: it removes stale claims and runs the
-  catch-up for each. Without a ticker, a stale claim waits for the next event on its item.
+- **Each hourly tick sweeps them,** if the hub has a ticker. The tick lists stale claims, and a
+  separate job per item clears each one inside that item's own one-at-a-time queue, so it can't
+  race a new event there, then runs the catch-up. Without a ticker, a stale claim waits for the
+  next event on its item.
 
 The limit has to be longer than the longest run. A run still going when its claim is taken over
 ends up working alongside the next one, and its eventual release frees the newer run's claim.
+
+### Known limits
+
+Cases the claim doesn't cover, accepted on purpose:
+
+- **A failed fire during a catch-up leaves the rest waiting.** No claim is left to release and
+  bring the next one round. A failure usually means a bad token or the hourly limit, so the next
+  fire would fail too. The next event on the item, or a tick's sweep, picks them up.
+- **Without a ticker, a dead run's claim waits** for the next event on that item.
+- **The sweep only checks the hub.** Stale claims on code-repo PRs wait for their next event.
+- **An edge about an item in another repo can't be claimed,** because the hub's token can't label
+  it there. It fires unclaimed, with a warning.
+- **Removing the label early can overlap two runs:** a routine that lets go before it's done, or
+  a person removing it by hand. Removing it by hand means "force release."
+- **A run longer than `stale_after_minutes` loses its claim.** Its eventual release then frees the
+  next run's claim. Set the limit above the longest run.
 
 ### Write access
 

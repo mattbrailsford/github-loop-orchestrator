@@ -136,6 +136,10 @@
           "description": "Schedule routes only: when it's due, in UTC. Five fields with the minute set to 0, like \"0 7 * * 1-5\".",
           "type": "string",
           "pattern": "^0\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+$"
+        },
+        "if_claimed": {
+          "description": "Label routes only, when claims are on: \"skip\" accepts that a label added while another run holds the claim is skipped, since a label can't wait its turn.",
+          "const": "skip"
         }
       }
     },

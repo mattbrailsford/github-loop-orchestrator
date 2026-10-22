@@ -39,7 +39,7 @@ routes:
       A maintainer replied to its proposal; act on what they asked: {request}
       Update the proposal comment to say what you understood, so a misread shows straight away.
       If the issue ends in state/needs-investigation, fire a loop-edge to route 'investigate'
-      with from '{route}' and hop {next_hop}.
+      with from '{route}', number {number}, hop {next_hop}, and sent_at set to the current UTC time.
       Route: {route}.
 
   - name: reporter-replies

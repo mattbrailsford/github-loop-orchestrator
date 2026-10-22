@@ -44,6 +44,9 @@ export function githubLookup({ token, apiUrl = 'https://api.github.com', warn = 
         labels: (item.labels ?? []).map((l) => (typeof l === 'string' ? l : l.name)),
         state: item.state,
         author: item.user?.login ?? '',
+        authorIsBot: item.user?.type === 'Bot',
+        body: item.body ?? '',
+        createdAt: Date.parse(item.created_at),
       };
     },
 
@@ -71,10 +74,12 @@ export function githubLookup({ token, apiUrl = 'https://api.github.com', warn = 
       return Math.max(...added);
     },
 
-    // The workflow's own 👀, 🚀, and 😕 on a comment or an issue body, as reaction IDs.
+    // The workflow's own 👀, 🚀, and 😕 on a comment or an issue body, as reaction IDs. null when
+    // they can't be read, which callers treat as "don't know, so don't fire".
     async orchestratorReactions(trigger) {
       const r = await get(`${reactionsPath(trigger)}?per_page=100`);
-      const mine = r.ok ? r.body.filter((x) => x.user?.login === ORCHESTRATOR_LOGIN) : [];
+      if (!r.ok) return null;
+      const mine = r.body.filter((x) => x.user?.login === ORCHESTRATOR_LOGIN);
       const id = (content) => mine.find((x) => x.content === content)?.id ?? null;
       return { eyes: id('eyes'), rocket: id('rocket'), confused: id('confused') };
     },

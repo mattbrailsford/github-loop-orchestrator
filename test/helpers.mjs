@@ -16,6 +16,7 @@ export function baseConfig(overrides = {}) {
       {
         name: 'maintainer-decides',
         when: 'issues.labeled',
+        if_claimed: 'skip',
         if: { label: 'state/*', has_label: ['state/drafted'], actor: 'maintainer' },
         prompt: 'Finalize {number}: {label}. Next hop {next_hop}.',
       },
@@ -43,7 +44,7 @@ export function baseConfig(overrides = {}) {
 }
 
 // A fake GitHub: permissions by login, issues by "repo#number", private repos by name.
-export function fakeLookup({ permissions = {}, issues = {}, privateRepos = [], links = {}, labelAges = {} } = {}) {
+export function fakeLookup({ permissions = {}, issues = {}, privateRepos = [], links = {}, labelAges = {}, claimed = [] } = {}) {
   const calls = [];
   return {
     calls,
@@ -62,6 +63,9 @@ export function fakeLookup({ permissions = {}, issues = {}, privateRepos = [], l
     async labelAge(repo, number, label) {
       calls.push(['labelAge', repo, number, label]);
       return labelAges[`${repo}#${number}:${label}`] ?? null;
+    },
+    async claimedItems() {
+      return claimed;
     },
     async linkedIssue(repo, number) {
       calls.push(['linkedIssue', repo, number]);

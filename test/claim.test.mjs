@@ -51,10 +51,16 @@ test('the claim label coming off asks for a catch-up; another label coming off d
   assert.deepEqual((await match(released('loop/working'), { config: baseConfig({ claim: false }) })).fires, []);
 });
 
-test('a tick also asks for a sweep of stale claims', async () => {
+test('a tick lists stale claims, and only stale ones', async () => {
   const tick = normalizeEvent('repository_dispatch', { action: 'loop-tick' }, HUB, new Date(min(0)));
-  const r = await match(tick);
-  assert.deepEqual(r.fires, [{ type: 'sweep' }]);
+  const lookup = fakeLookup({
+    claimed: [7, 8],
+    labelAges: { [`${HUB}#7:loop/working`]: 90, [`${HUB}#8:loop/working`]: 5 },
+  });
+  const r = await match(tick, { lookup });
+  assert.deepEqual(r.fires, []);
+  assert.deepEqual(r.stale, [7]);
+  assert.match(r.log, /stale claims on #7/);
 });
 
 test('claim settings are checked', () => {
@@ -69,13 +75,13 @@ test('claim settings are checked', () => {
 // --- the claim-and-fire step ------------------------------------------------------------
 
 // A fake GitHub that keeps labels and reactions, so a test can check what ended up where.
-function world({ labels = [], claimAt = null, comments = [], reactions = {}, fireOk = true, permissions = { maint: 'admin' } } = {}) {
-  const state = { labels: new Set(labels), claimAt, reactions: structuredClone(reactions), fired: [], log: [] };
+function world({ labels = [], claimAt = null, comments = [], reactions = {}, fireOk = true, permissions = { maint: 'admin' }, item = {}, unreadable = [] } = {}) {
+  const state = { labels: new Set(labels), claimAt, reactions: structuredClone(reactions), fired: [], log: [], clock: min(1) };
   const key = (t) => (t.type === 'comment' ? `c${t.id}` : `i${t.number}`);
   const lookup = {
     ...fakeLookup({ permissions }),
     async issue() {
-      return { kind: 'issue', labels: [...state.labels], state: 'open', author: 'reporter' };
+      return { kind: 'issue', labels: [...state.labels], state: 'open', author: 'reporter', body: '', createdAt: min(-600), ...item };
     },
     async labelAge(repo, number, label, now) {
       return state.labels.has(label) && state.claimAt !== null ? (now - state.claimAt) / 60000 : null;
@@ -84,10 +90,14 @@ function world({ labels = [], claimAt = null, comments = [], reactions = {}, fir
       return state.claimAt;
     },
     async orchestratorReactions(t) {
+      if (unreadable.includes(key(t))) return null;
       return { ...NONE, ...(state.reactions[key(t)] ?? {}) };
     },
     async commentsWithReactions() {
-      return comments.map((c) => ({ ...c, orchestrator: { ...NONE, ...(state.reactions[`c${c.id}`] ?? {}) } }));
+      return comments.map((c) => ({
+        ...c,
+        orchestrator: unreadable.includes(`c${c.id}`) ? null : { ...NONE, ...(state.reactions[`c${c.id}`] ?? {}) },
+      }));
     },
     async claimedItems() {
       return state.labels.has('loop/working') ? [7] : [];
@@ -96,8 +106,8 @@ function world({ labels = [], claimAt = null, comments = [], reactions = {}, fir
   let nextId = 1;
   const gh = {
     async addLabel(repo, number, label) {
+      if (!state.labels.has(label)) state.claimAt = state.clock;
       state.labels.add(label);
-      state.claimAt ??= T0;
       return true;
     },
     async removeLabel(repo, number, label) {
@@ -188,12 +198,55 @@ test("a fire that fails gives back the claim, swaps 👀 for 😕, and fails the
   assert.deepEqual(Object.keys(w.state.reactions.c555), ['confused']);
 });
 
-test('an edge passes a held claim, keeps it, and has nothing to react to', async () => {
+test('an edge passes a held claim, takes it over afresh, and has nothing to react to', async () => {
   const w = world({ labels: ['loop/working'], claimAt: min(0) });
-  await run(w, [{ ...fireFor(null), edge: true }]);
+  await run(w, [{ ...fireFor(null), edge: { sentAt: min(0.5) } }]);
   assert.equal(w.state.fired.length, 1);
   assert.ok(w.state.labels.has('loop/working'));
+  assert.equal(w.state.claimAt, w.state.clock, 'the claim time marks the handover');
   assert.deepEqual(w.state.reactions, {});
+});
+
+test('the same edge sent twice fires once', async () => {
+  const w = world({ labels: ['loop/working'], claimAt: min(0) });
+  const edge = { ...fireFor(null), edge: { sentAt: min(0.5) } };
+  await run(w, [edge, edge]);
+  assert.equal(w.state.fired.length, 1);
+  assert.match(w.state.log.join('\n'), /already handed on; skipped as a repeat/);
+});
+
+test('the next run in a chain can still hand on, since it sends after taking over', async () => {
+  const w = world({ labels: ['loop/working'], claimAt: min(0) });
+  await run(w, [{ ...fireFor(null), edge: { sentAt: min(0.5) } }]);
+  w.state.clock = min(3);
+  await run(w, [{ ...fireFor(null), edge: { sentAt: min(2) } }]);
+  assert.equal(w.state.fired.length, 2);
+});
+
+test('a label route skips while the item is claimed, and says so', async () => {
+  const w = world({ labels: ['loop/working'], claimAt: min(0) });
+  await run(w, [{ ...fireFor(null), if_claimed: 'skip' }]);
+  assert.equal(w.state.fired.length, 0);
+  assert.match(w.state.log.join('\n'), /label route skips while claimed/);
+});
+
+test('a label route must say it accepts being skipped while claims are on', () => {
+  const route = { name: 'l', when: 'issues.labeled', if: { label: 'go' }, prompt: 'x' };
+  assert.ok(validateConfig(baseConfig({ routes: [route] })).some((e) => e.includes('if_claimed: skip')));
+  assert.deepEqual(validateConfig(baseConfig({ routes: [{ ...route, if_claimed: 'skip' }] })), []);
+  assert.deepEqual(validateConfig(baseConfig({ claim: false, routes: [route] })), []);
+  assert.ok(
+    validateConfig(baseConfig({ routes: [{ name: 'c', when: 'issues.opened', if_claimed: 'skip', prompt: 'x' }] })).some((e) =>
+      e.includes('only a *.labeled route'),
+    ),
+  );
+});
+
+test("if a comment's reactions can't be read, it isn't fired", async () => {
+  const w = world({ unreadable: ['c555'] });
+  await run(w, [fireFor()]);
+  assert.equal(w.state.fired.length, 0);
+  assert.match(w.state.log.join('\n'), /couldn't read its reactions/);
 });
 
 test('a schedule fire has no claim and no reaction', async () => {
@@ -273,7 +326,7 @@ test('a sweep clears a stale claim and catches up on what waited', async () => {
     comments: [comment('920', '@claude still there?', min(-100))],
     reactions: { c920: { eyes: 1 } },
   });
-  await run(w, [{ type: 'sweep' }]);
+  await run(w, [{ type: 'sweep-item', item: { repo: HUB, number: 7 } }]);
   assert.match(w.state.log.join('\n'), /clearing a claim left for 121 min/);
   assert.equal(w.state.fired.length, 1);
   assert.ok(w.state.reactions.c920.rocket);
@@ -281,7 +334,38 @@ test('a sweep clears a stale claim and catches up on what waited', async () => {
 
 test('a sweep leaves a fresh claim alone', async () => {
   const w = world({ labels: ['loop/working'], claimAt: min(-5) });
-  await run(w, [{ type: 'sweep' }]);
+  await run(w, [{ type: 'sweep-item', item: { repo: HUB, number: 7 } }]);
   assert.ok(w.state.labels.has('loop/working'));
+  assert.equal(w.state.fired.length, 0);
+});
+
+test("the catch-up passes over a comment whose reactions can't be read", async () => {
+  const w = world({
+    claimAt: min(0),
+    comments: [comment('930', '@claude a', min(1)), comment('931', '@claude b', min(2))],
+    unreadable: ['c930'],
+  });
+  await run(w, [{ type: 'catch-up', item: { repo: HUB, number: 7 } }]);
+  assert.equal(w.state.fired.length, 1);
+  assert.ok(w.state.reactions.c931.rocket);
+});
+
+test('a new issue that waited behind a claim is caught up before its comments', async () => {
+  const w = world({
+    claimAt: min(0),
+    item: { body: 'it crashes', createdAt: min(1) },
+    reactions: { i7: { eyes: 1 } },
+    comments: [comment('940', '@claude look', min(2))],
+  });
+  await run(w, [{ type: 'catch-up', item: { repo: HUB, number: 7 } }]);
+  assert.equal(w.state.fired.length, 1);
+  assert.match(w.state.fired[0], /^Triage acme\/tracker#7/);
+  assert.ok(w.state.reactions.i7.rocket);
+  assert.match(w.state.log.join('\n'), /the issue itself was waiting/);
+});
+
+test('a new issue that already ran is not caught up', async () => {
+  const w = world({ claimAt: min(0), item: { createdAt: min(1) }, reactions: { i7: { eyes: 1, rocket: 2 } } });
+  await run(w, [{ type: 'catch-up', item: { repo: HUB, number: 7 } }]);
   assert.equal(w.state.fired.length, 0);
 });

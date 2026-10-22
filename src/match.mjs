@@ -95,15 +95,20 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
         trigger: null,
       });
     }
-    // Each tick also clears claims a run left behind, so comments waiting on them get their turn.
-    if (claimOf(config)) fires.push({ type: 'sweep' });
-    const named = fires.filter((f) => f.route).map((f) => `"${f.route}"`);
-    return {
-      route: fires[0].route ?? null,
-      prompt: fires[0].prompt ?? '',
-      fires,
-      log: named.length ? `due at ${stamp} (${event.source}): ${named.join(', ')}` : `no schedule route is due at ${stamp}`,
-    };
+    // Each tick also lists claims a run left behind. They're cleared one item at a time, in that
+    // item's own queue, so the clearing can't race a new event on the same item.
+    const claim = claimOf(config);
+    const stale = [];
+    if (claim) {
+      for (const number of (await lookup.claimedItems(hubRepo, claim.label)).slice(0, 20)) {
+        const age = await lookup.labelAge(hubRepo, number, claim.label, event.time.getTime());
+        if (age !== null && age >= claim.stale_after_minutes) stale.push(number);
+      }
+    }
+    const named = fires.map((f) => `"${f.route}"`);
+    const parts = [named.length ? `due at ${stamp} (${event.source}): ${named.join(', ')}` : `no schedule route is due at ${stamp}`];
+    if (stale.length) parts.push(`stale claims on ${stale.map((n) => `#${n}`).join(', ')}`);
+    return { route: fires[0]?.route ?? null, prompt: fires[0]?.prompt ?? '', fires, stale, log: parts.join('; ') };
   }
 
   let candidates = config.routes;
@@ -203,7 +208,8 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
         prompt: buildPrompt(route.prompt, values, request, { claim }),
         item: { repo: event.repo, number: event.number },
         claim: claim ? { repo: event.repo, number: event.number, label: claim.label, stale_after_minutes: claim.stale_after_minutes } : null,
-        edge: event.when === 'edge',
+        edge: event.when === 'edge' ? { sentAt: event.edge.sentAt ?? null } : null,
+        if_claimed: route.if_claimed ?? null,
         trigger: triggerOf(event),
       },
       tellNumber(`matched route "${route.name}"`),

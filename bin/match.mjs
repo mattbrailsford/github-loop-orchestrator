@@ -39,6 +39,7 @@ try {
   const result = await matchEvent({ config, event, workflowRepo, hubRepo, lookup });
   console.log(result.log);
   setOutput('count', String(result.fires.length));
+  setOutput('stale', JSON.stringify(result.stale ?? []));
   if (args.out) writeFileSync(args.out, JSON.stringify(result.fires));
 } catch (err) {
   if (err instanceof ConfigError) {

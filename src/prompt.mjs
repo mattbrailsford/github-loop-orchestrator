@@ -27,7 +27,9 @@ export function claimLine(claim, values) {
     `This run holds the claim: the label "${claim.label}" on ${values.repo}#${values.number}. ` +
     'While it is on, no other run starts for this item; anything else that comes in waits its turn. ' +
     `As your last step, whatever happened, remove the "${claim.label}" label. The one exception: if ` +
-    'you fired a loop-edge, leave it on, because the run you started takes over the claim.'
+    'you fired a loop-edge, leave it on, because the run you started takes over the claim. When you ' +
+    'fire a loop-edge, include sent_at, the current UTC time, in its payload, and reuse the same ' +
+    'payload if you have to send it again.'
   );
 }
 

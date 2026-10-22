@@ -101,6 +101,7 @@ export function normalizeEvent(eventName, payload, workflowRepo, now = new Date(
     ) {
       return { invalid: 'a loop-edge needs route, from, number, and a hop of 1 or more' };
     }
+    const sentAt = typeof cp.sent_at === 'string' ? Date.parse(cp.sent_at) : NaN;
     return {
       ...base(payload),
       when: 'edge',
@@ -112,7 +113,7 @@ export function normalizeEvent(eventName, payload, workflowRepo, now = new Date(
       state: null,
       actor: '',
       senderIsBot: false,
-      edge: { route: cp.route, from: cp.from, hop },
+      edge: { route: cp.route, from: cp.from, hop, sentAt: Number.isFinite(sentAt) ? sentAt : null },
     };
   }
 
