@@ -72,6 +72,23 @@ Working rules:
 - If any other GitHub write reports an error, check whether it happened anyway before trying again: read the labels or comments back. A write that errored often went through, and repeating it can leave a duplicate.
 ```
 
+### No Claude footer
+
+GitHub already shows that a comment came through the Claude app, so a "Generated with Claude
+Code" footer only adds noise. The stored prompt says not to add one, but a run can still add it
+on its own. As a second layer, commit this to the repo the routine works in, as
+`.claude/settings.json`:
+
+```json
+{
+  "attribution": false
+}
+```
+
+Claude Code's docs say `attribution` covers commits and PR descriptions; whether it also covers
+comments isn't documented ([settings reference](https://code.claude.com/docs/en/settings-reference.md)).
+The two together are the best available.
+
 ## Installing the Claude GitHub app
 
 A routine reaches GitHub through the Claude GitHub app, so the app has to be installed on every
