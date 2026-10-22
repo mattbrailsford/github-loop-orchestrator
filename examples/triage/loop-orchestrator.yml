@@ -25,7 +25,6 @@ routes:
       lacks_label: ["state/*"]
     prompt: >-
       Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}).
-      Route: {route}.
 
   # Everything a maintainer says to the routine: approve, pick another state, correct it, or
   # ask for a fresh look. The skill reads the request, typos and all, and acts on it.
@@ -38,8 +37,7 @@ routes:
       Run /issue-triage {number} --unattended --respond for {repo} (code in {code_repo}).
       A maintainer replied to its proposal; act on what they asked: {request}
       Update the proposal comment to say what you understood, so a misread shows straight away.
-      If the issue ends in state/needs-investigation, hand on with /loop-edge investigate.
-      Route: {route}.
+      If the issue ends in state/needs-investigation, hand on with `/loop-edge investigate`.
 
   - name: reporter-replies
     when: issue_comment.created
@@ -49,7 +47,6 @@ routes:
     prompt: >-
       Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}),
       using reporter comment {comment_id} as new detail.
-      Route: {route}.
 
   # Investigating only reads and runs code, so it needs no second approval.
   - name: investigate
@@ -58,7 +55,6 @@ routes:
     prompt: >-
       Run /investigate-bug {number} --unattended --propose for {repo} (code in {code_repo}).
       Hop {hop}.
-      Route: {route}.
 
   # Weekday mornings, 07:00 UTC: one reminder about proposals nobody has answered.
   - name: stale-drafts
@@ -68,4 +64,3 @@ routes:
       List the open issues in {repo} that have had state/drafted for more than 5 days.
       If there are any, send maintainers one /loop-notify with the count and links.
       Don't comment on or change the issues.
-      Route: {route}.

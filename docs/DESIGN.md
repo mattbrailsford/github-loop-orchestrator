@@ -229,7 +229,6 @@ routes:
       lacks_label: ["status/*"]
     prompt: >-
       Triage issue {number} in {repo}.
-      Route: {route}.
 
   # A maintainer's reply is how they correct the routine.
   - name: maintainer-reply
@@ -239,7 +238,6 @@ routes:
       actor: maintainer
     prompt: >-
       Issue {number} in {repo}: a maintainer replied (comment {comment_id}).
-      Route: {route}.
 
   - name: asked-directly
     when: issue_comment.created
@@ -249,14 +247,12 @@ routes:
     prompt: >-
       A maintainer mentioned you on issue {number} in {repo}.
       Do what they asked: {request}
-      Route: {route}.
 
   - name: investigate
     when: edge
     allow_from: [new-issue, maintainer-reply]
     prompt: >-
       Investigate issue {number} in {repo}. This was hop {hop}.
-      Route: {route}.
 ```
 
 The label names above are only an example. The orchestrator treats them as strings to match.

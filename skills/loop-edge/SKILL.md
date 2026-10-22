@@ -15,7 +15,9 @@ route as an edge that takes runs from this one, and the chain is under its hop l
 
 ## What you need
 
-- **The route to hand on to:** the argument, such as `investigate`.
+- **The route to hand on to:** the argument, which is the word right after `/loop-edge` in your
+  instruction, such as `investigate` in "hand on with `/loop-edge investigate`". It's never the
+  `route` in the `<loop-run>` block: that's the route you're in.
 - **This run's details:** the `<loop-run>` block in your instruction. It gives `hub`, `repo`,
   `number`, `route`, and `hop`. If there's no block, or no `number` (a scheduled run is about the
   whole repo, not one item), stop and say an edge can't be sent from here.
