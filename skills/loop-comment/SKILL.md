@@ -77,6 +77,8 @@ create, and check before retrying.
 - **One reply per run, one living comment per key.** Don't post a second reply to say the first
   changed; edit it, which is what calling the skill again in the same run does.
 - **Write only on the item in the `<loop-run>` block.** Other issues are another run's business.
+- **No footer.** Don't add a "Generated with Claude Code" line or any other sign-off: GitHub
+  already shows the comment came through Claude.
 - **Nothing private.** A comment on a public repo is public. A possible security report gets no
   comment at all; use /loop-notify, private, instead.
 - **Don't edit other people's comments,** including another route's, even with the same key.
