@@ -22,7 +22,8 @@ test('a match hands over a claim with the default label, and the prompt says how
   assert.deepEqual(f.claim, { repo: HUB, number: 7, label: 'loop/working', stale_after_minutes: 60 });
   assert.deepEqual(f.trigger, { type: 'issue', repo: HUB, number: 7 });
   assert.match(f.prompt, /holds the claim: the label "loop\/working" on acme\/tracker#7/);
-  assert.match(f.prompt, /As your last step, whatever happened, remove the "loop\/working" label/);
+  assert.match(f.prompt, /As your last step, whatever happened, remove that one label and no other: gh api -X DELETE repos\/acme\/tracker\/issues\/7\/labels\/loop%2Fworking/);
+  assert.match(f.prompt, /never set the item's labels to a new list/);
   assert.match(f.prompt, /if you handed on with \/loop-edge, leave it on/);
 });
 

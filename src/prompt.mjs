@@ -23,10 +23,12 @@ function requestBlock(values, request) {
 }
 
 export function claimLine(claim, values) {
+  const path = `repos/${values.repo}/issues/${values.number}/labels/${encodeURIComponent(claim.label)}`;
   return (
     `This run holds the claim: the label "${claim.label}" on ${values.repo}#${values.number}. ` +
     'While it is on, no other run starts for this item; anything else that comes in waits its turn. ' +
-    `As your last step, whatever happened, remove the "${claim.label}" label. The one exception: if ` +
+    `As your last step, whatever happened, remove that one label and no other: gh api -X DELETE ${path} ` +
+    '(never set the item\'s labels to a new list, which removes the rest too). The one exception: if ' +
     'you handed on with /loop-edge, leave it on, because the run you started takes over the claim.'
   );
 }
