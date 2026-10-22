@@ -142,8 +142,9 @@ github-loop-orchestrator/
 │   ├── caller.yml            # what each repo copies into .github/workflows/
 │   ├── cloud-setup.sh        # what goes in the routine environment's "Setup script" field
 │   └── routine.md            # the worker and ticker routines: config, stored prompts, notifications
-├── skills/
-│   └── loop-notify/          # a skill every routine gets: push notifications, with a private mode
+├── skills/                   # skills every routine gets
+│   ├── loop-edge/            # hands a run on to the next route in a chain
+│   └── loop-notify/          # push notifications, with a private mode
 ├── stacks/
 │   └── umbraco/              # optional: .NET SDK, SQL Server, and run-umbraco.sh for a routine
 ├── examples/

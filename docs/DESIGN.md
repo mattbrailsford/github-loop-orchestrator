@@ -423,6 +423,23 @@ in a fixed set of placeholders:
 | `{request}` | what a maintainer asked for after a mention or prefix; only in `mentions` and `addressed_with` routes ([below](#the-request-placeholder)) |
 | `{time}` | for schedule routes, the hour it ran for, like `2026-10-19T07:00Z` |
 
+Every prompt also carries the run's own details in a fixed block, whatever the route's
+template says, so skills can read them:
+
+```text
+<loop-run>
+hub: owner/tracker
+repo: owner/tracker
+number: 123
+kind: issue
+route: maintainer-says
+hop: 0
+claim: loop/working
+</loop-run>
+```
+
+A scheduled run gets `time` in place of `number`, `kind`, and `hop`, and no `claim`.
+
 There's deliberately no placeholder for a title, body, or general comment text. Anyone can write
 those, and text pasted into a prompt can try to steer the model. The routine fetches them itself,
 where its own skills can treat them as data.
@@ -491,8 +508,13 @@ The long-term goal is a graph: each route is a node, and one step's result can s
 A routine's own labels and comments never start anything, because bot events are always dropped
 ([section 4](#4-matching)). That stops a routine waking itself by accident.
 
-To start the next step on purpose, the routine sends GitHub a `repository_dispatch` event of
-type `loop-edge`, with this payload:
+To start the next step on purpose, the routine runs `/loop-edge <route>`, a skill every routine
+gets. It reads the run's details from the `<loop-run>` block, builds the payload, sends it to the
+hub, and on a failure resends the same payload rather than a new one. A route's prompt then
+only has to name where to go: "If it needs investigating, hand on with /loop-edge investigate."
+Tested on a real repo: a routine sent the edge, and the next run started.
+
+Under the skill, it's a `repository_dispatch` event of type `loop-edge`, with this payload:
 
 ```json
 { "route": "investigate", "from": "new-issue", "repo": "owner/tracker", "number": 123, "hop": 1,

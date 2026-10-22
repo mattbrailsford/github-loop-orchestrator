@@ -27,10 +27,22 @@ export function claimLine(claim, values) {
     `This run holds the claim: the label "${claim.label}" on ${values.repo}#${values.number}. ` +
     'While it is on, no other run starts for this item; anything else that comes in waits its turn. ' +
     `As your last step, whatever happened, remove the "${claim.label}" label. The one exception: if ` +
-    'you fired a loop-edge, leave it on, because the run you started takes over the claim. When you ' +
-    'fire a loop-edge, include sent_at, the current UTC time, in its payload, and reuse the same ' +
-    'payload if you have to send it again.'
+    'you handed on with /loop-edge, leave it on, because the run you started takes over the claim.'
   );
+}
+
+// The run's own details, in one fixed shape, so skills such as /loop-edge can read them instead
+// of every route passing them on by hand.
+export function runBlock(values, { scheduled = false, claim = null } = {}) {
+  const lines = [
+    `hub: ${values.tracker_repo}`,
+    `repo: ${values.repo}`,
+    ...(scheduled ? [`time: ${values.time}`] : [`number: ${values.number}`, `kind: ${values.kind}`]),
+    `route: ${values.route}`,
+    ...(scheduled ? [] : [`hop: ${values.hop ?? 0}`]),
+    ...(claim ? [`claim: ${claim.label}`] : []),
+  ];
+  return `<loop-run>\n${lines.join('\n')}\n</loop-run>`;
 }
 
 export function buildPrompt(template, values, request, { scheduled = false, claim = null } = {}) {
@@ -38,5 +50,5 @@ export function buildPrompt(template, values, request, { scheduled = false, clai
     name === 'request' ? `\n\n${requestBlock(values, request)}\n\n` : String(values[name] ?? ''),
   );
   const tail = scheduled ? SCHEDULED_RECHECK : claim ? `${RECHECK}\n\n${claimLine(claim, values)}` : RECHECK;
-  return `${filled.trim()}\n\n${tail}`;
+  return `${filled.trim()}\n\n${runBlock(values, { scheduled, claim })}\n\n${tail}`;
 }

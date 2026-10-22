@@ -3,7 +3,7 @@
 #
 # It runs once when the environment is built, before any session. It clones the orchestrator
 # and runs scripts/cloud-skill-sync.sh, which copies into ~/.claude the orchestrator's own
-# skills (loop-notify) and the skills and agents from every repo in SKILL_SOURCES, so the
+# skills (loop-notify, loop-edge) and the skills and agents from every repo in SKILL_SOURCES, so the
 # routine can call them by name. Then it runs any stacks you turn on below.
 #
 # TO PICK UP NEWER SKILLS: bump the `rebuild:` number and save. The environment is cached, and

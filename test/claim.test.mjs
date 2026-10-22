@@ -23,7 +23,30 @@ test('a match hands over a claim with the default label, and the prompt says how
   assert.deepEqual(f.trigger, { type: 'issue', repo: HUB, number: 7 });
   assert.match(f.prompt, /holds the claim: the label "loop\/working" on acme\/tracker#7/);
   assert.match(f.prompt, /As your last step, whatever happened, remove the "loop\/working" label/);
-  assert.match(f.prompt, /if you fired a loop-edge, leave it on/);
+  assert.match(f.prompt, /if you handed on with \/loop-edge, leave it on/);
+});
+
+test('every prompt carries the run details in a fixed block', async () => {
+  const r = await match(commentEvent('@claude look'));
+  assert.match(
+    r.fires[0].prompt,
+    /<loop-run>\nhub: acme\/tracker\nrepo: acme\/tracker\nnumber: 7\nkind: issue\nroute: maintainer-asks\nhop: 0\nclaim: loop\/working\n<\/loop-run>/,
+  );
+});
+
+test('an edge run sees its hop, and a schedule run sees its time and no item', async () => {
+  const lookup = fakeLookup({ issues: { [`${HUB}#7`]: { kind: 'issue', labels: [], state: 'open', author: 'r' } } });
+  const edge = normalizeEvent(
+    'repository_dispatch',
+    { action: 'loop-edge', client_payload: { route: 'investigate', from: 'maintainer-decides', number: 7, hop: 2 } },
+    HUB,
+  );
+  assert.match((await match(edge, { lookup })).fires[0].prompt, /route: investigate\nhop: 2\n/);
+
+  const config = baseConfig({ claim: false, routes: [{ name: 's', when: 'schedule', cron: '0 * * * *', prompt: 'x' }] });
+  const tick = normalizeEvent('repository_dispatch', { action: 'loop-tick' }, HUB, new Date(min(0)));
+  const prompt = (await match(tick, { config })).fires[0].prompt;
+  assert.match(prompt, /<loop-run>\nhub: acme\/tracker\nrepo: acme\/tracker\ntime: 2026-10-21T16:00Z\nroute: s\n<\/loop-run>/);
 });
 
 test('the label and expiry come from the config', async () => {
