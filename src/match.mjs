@@ -141,6 +141,14 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
     return role;
   };
 
+  // A PR's checks are read once, and only by a route that asks. An issue has none, so it never
+  // matches; neither does a PR whose checks can't be read.
+  let checks;
+  const getChecks = async () => {
+    if (checks === undefined) checks = event.kind === 'pr' ? await lookup.checks(event.repo, event.number) : null;
+    return checks;
+  };
+
   const mentionText = () => (event.when.endsWith('.opened') ? event.body : event.commentBody);
 
   for (const route of candidates) {
@@ -156,6 +164,7 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
     if ('comment_starts_with' in c && !event.commentBody.trimStart().startsWith(c.comment_starts_with)) continue;
     if ('mentions' in c && !findMention(mentionText(), c.mentions)) continue;
     if ('addressed_with' in c && !findAddress(mentionText(), c.addressed_with)) continue;
+    if ('checks' in c && (await getChecks()) !== c.checks) continue;
     if ('actor' in c && c.actor !== 'anyone') {
       const r = await getRole();
       const ok =
@@ -217,6 +226,7 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
           has_label: c.has_label ?? null,
           lacks_label: c.lacks_label ?? null,
           state: c.state ?? null,
+          checks: c.checks ?? null,
         },
       },
       tellNumber(`matched route "${route.name}"`),

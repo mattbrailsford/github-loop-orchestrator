@@ -4,11 +4,10 @@ import { validateConfig } from '../src/config.mjs';
 import { normalizeEvent } from '../src/event.mjs';
 import { CATCH_UP_LEAD_MS, pendingComments, runCandidates } from '../src/fire.mjs';
 import { matchEvent } from '../src/match.mjs';
-import { HUB, baseConfig, commentEvent, fakeLookup, issueEvent } from './helpers.mjs';
+import { HUB, NONE, baseConfig, commentEvent, fakeLookup, issueEvent, world } from './helpers.mjs';
 
 const T0 = Date.parse('2026-10-21T16:00:00Z');
 const min = (m) => T0 + m * 60000;
-const NONE = { eyes: null, rocket: null, confused: null };
 
 // --- the match step: what it hands over -------------------------------------------------
 
@@ -97,64 +96,6 @@ test('claim settings are checked', () => {
 });
 
 // --- the claim-and-fire step ------------------------------------------------------------
-
-// A fake GitHub that keeps labels and reactions, so a test can check what ended up where.
-function world({ labels = [], claimAt = null, comments = [], reactions = {}, fireOk = true, permissions = { maint: 'admin' }, item = {}, unreadable = [] } = {}) {
-  const state = { labels: new Set(labels), claimAt, reactions: structuredClone(reactions), fired: [], log: [], clock: min(1) };
-  const key = (t) => (t.type === 'comment' ? `c${t.id}` : `i${t.number}`);
-  const lookup = {
-    ...fakeLookup({ permissions }),
-    async issue() {
-      return { kind: 'issue', labels: [...state.labels], state: 'open', author: 'reporter', body: '', createdAt: min(-600), ...item };
-    },
-    async labelAge(repo, number, label, now) {
-      return state.labels.has(label) && state.claimAt !== null ? (now - state.claimAt) / 60000 : null;
-    },
-    async labelAddedAt() {
-      return state.claimAt;
-    },
-    async orchestratorReactions(t) {
-      if (unreadable.includes(key(t))) return null;
-      return { ...NONE, ...(state.reactions[key(t)] ?? {}) };
-    },
-    async commentsWithReactions() {
-      return comments.map((c) => ({
-        ...c,
-        orchestrator: unreadable.includes(`c${c.id}`) ? null : { ...NONE, ...(state.reactions[`c${c.id}`] ?? {}) },
-      }));
-    },
-    async claimedItems() {
-      return state.labels.has('loop/working') ? [7] : [];
-    },
-  };
-  let nextId = 1;
-  const gh = {
-    async addLabel(repo, number, label) {
-      if (!state.labels.has(label)) state.claimAt = state.clock;
-      state.labels.add(label);
-      return true;
-    },
-    async removeLabel(repo, number, label) {
-      state.labels.delete(label);
-      return true;
-    },
-    async react(t, content) {
-      const id = nextId++;
-      state.reactions[key(t)] = { ...(state.reactions[key(t)] ?? {}), [content]: id };
-      return id;
-    },
-    async unreact(t, id) {
-      const r = state.reactions[key(t)] ?? {};
-      for (const k of Object.keys(r)) if (r[k] === id) delete r[k];
-      return true;
-    },
-  };
-  const fireRoutine = async (prompt) => {
-    state.fired.push(prompt);
-    return fireOk;
-  };
-  return { state, lookup, gh, fireRoutine };
-}
 
 const run = (w, candidates, { config = baseConfig(), now = min(1) } = {}) =>
   runCandidates({

@@ -1,5 +1,7 @@
 export const HUB = 'acme/tracker';
 export const CODE = 'acme/code';
+export const T0 = Date.parse('2026-10-21T16:00:00Z');
+export const NONE = { eyes: null, rocket: null, confused: null };
 
 export function baseConfig(overrides = {}) {
   return {
@@ -102,4 +104,108 @@ export function commentEvent(body, overrides = {}) {
     actor: 'maint',
     ...overrides,
   });
+}
+
+// A fake GitHub that keeps labels and reactions, so a test can check what ended up where.
+export function world({
+  labels = [],
+  claimAt = null,
+  comments = [],
+  reactions = {},
+  fireOk = true,
+  permissions = { maint: 'admin' },
+  item = {},
+  unreadable = [],
+  removedAt = {},
+  checks = 'none',
+} = {}) {
+  const state = {
+    labels: new Set(labels),
+    claimAt,
+    removedAt: { ...removedAt },
+    reactions: structuredClone(reactions),
+    comments: structuredClone(comments),
+    checks,
+    startedAt: {},
+    fired: [],
+    log: [],
+    clock: T0 + 60000,
+  };
+  const key = (t) => (t.type === 'comment' ? `c${t.id}` : `i${t.number}`);
+  const lookup = {
+    ...fakeLookup({ permissions }),
+    async issue() {
+      return { kind: 'issue', labels: [...state.labels], state: 'open', author: 'reporter', body: '', createdAt: T0 - 600 * 60000, ...item };
+    },
+    async labelAge(repo, number, label, now) {
+      return state.labels.has(label) && state.claimAt !== null ? (now - state.claimAt) / 60000 : null;
+    },
+    async labelAddedAt() {
+      return state.claimAt;
+    },
+    async orchestratorReactions(t) {
+      if (unreadable.includes(key(t))) return null;
+      return { ...NONE, ...(state.reactions[key(t)] ?? {}) };
+    },
+    async labelRemovedAt(repo, number, label) {
+      return state.removedAt[label] ?? null;
+    },
+    // Every 🚀 counts at the time it was added; the clock moves on a second per reaction.
+    async runsStarted(repo, number, since) {
+      if (unreadable.includes('runs')) return null;
+      return Object.entries(state.reactions).filter(([k, r]) => r.rocket && (since === null || (state.startedAt[k] ?? 0) > since)).length;
+    },
+    async checks() {
+      return state.checks;
+    },
+    async commentsWithReactions() {
+      return state.comments.map((c) => ({
+        ...c,
+        orchestrator: unreadable.includes(`c${c.id}`) ? null : { ...NONE, ...(state.reactions[`c${c.id}`] ?? {}) },
+      }));
+    },
+    async claimedItems() {
+      return state.labels.has('loop/working') ? [7] : [];
+    },
+  };
+  let nextId = 1;
+  const gh = {
+    async addLabel(repo, number, label) {
+      if (!state.labels.has(label)) state.claimAt = state.clock;
+      state.labels.add(label);
+      return true;
+    },
+    async removeLabel(repo, number, label) {
+      if (state.labels.has(label)) state.removedAt[label] = state.clock;
+      state.labels.delete(label);
+      return true;
+    },
+    async react(t, content) {
+      const id = nextId++;
+      state.clock += 1000;
+      if (content === 'rocket') state.startedAt[key(t)] = state.clock;
+      state.reactions[key(t)] = { ...(state.reactions[key(t)] ?? {}), [content]: id };
+      return id;
+    },
+    async unreact(t, id) {
+      const r = state.reactions[key(t)] ?? {};
+      for (const k of Object.keys(r)) if (r[k] === id) delete r[k];
+      return true;
+    },
+    async comment(repo, number, body) {
+      const id = String(1000 + state.comments.length);
+      state.comments.push({ id, body, login: 'github-actions[bot]', isBot: true, createdAt: state.clock });
+      return id;
+    },
+    async editComment(repo, id, body) {
+      const c = state.comments.find((x) => x.id === id);
+      if (c) c.body = body;
+      return !!c;
+    },
+  };
+  const fireRoutine = async (prompt) => {
+    state.fired.push(prompt);
+    return fireOk;
+  };
+  return { state, lookup, gh, fireRoutine };
 }

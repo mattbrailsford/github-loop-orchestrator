@@ -22,11 +22,15 @@ on:
   # schedule:
   #   - cron: "0 * * * *"
 
-# Write, so the orchestrator can add the claim label and the 👀 reaction. It writes nothing else.
+# Write, so the orchestrator can add the claim label and its reactions. It writes nothing else.
+# checks, statuses, and actions are read only for routes with a "checks" condition.
 permissions:
   contents: read
   issues: write
   pull-requests: write
+  checks: read
+  statuses: read
+  actions: read
 
 jobs:
   loop:
@@ -35,6 +39,8 @@ jobs:
       # Leave empty when this repo holds its own .github/loop-orchestrator.yml.
       # In a code repo whose issues live elsewhere, name the tracker (the hub) here.
       config_repo: ""
+      # Set the repo variable LOOP_MODE to "shadow" or "stub" to switch without a commit.
+      mode: ${{ vars.LOOP_MODE }}
     secrets:
       LOOP_FIRE_URL: ${{ secrets.LOOP_FIRE_URL }}
       LOOP_FIRE_TOKEN: ${{ secrets.LOOP_FIRE_TOKEN }}

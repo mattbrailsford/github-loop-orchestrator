@@ -13,6 +13,15 @@
     "version": {
       "const": 1
     },
+    "mode": {
+      "description": "live fires the routine. shadow decides and logs what it would do, and writes and fires nothing: a safe way to try the loop on a real repo. stub acts the routine out with a scripted stand-in, for testing (see e2e/README.md). The caller's LOOP_MODE variable overrides this.",
+      "enum": [
+        "live",
+        "shadow",
+        "stub"
+      ],
+      "default": "live"
+    },
     "bots": {
       "description": "Logins to treat as bots, on top of GitHub's own Bot type.",
       "type": "array",
@@ -63,6 +72,28 @@
           }
         }
       ]
+    },
+    "run_limit": {
+      "description": "The most runs one issue or PR may have. At the limit, the next run is refused with 😕 and the label goes on, for a person to look. Taking the label off starts the count again. Edges don't count.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runs"
+      ],
+      "properties": {
+        "runs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "pattern": "^[^*]+$",
+          "default": "loop/limit"
+        }
+      }
     },
     "routes": {
       "type": "array",
@@ -198,6 +229,14 @@
             "minLength": 1,
             "maxLength": 20
           }
+        },
+        "checks": {
+          "description": "Pull request events and edges only: the state of the PR's checks on its head commit, check runs and commit statuses both. An issue, or a PR with no checks, never matches. Checked again just before firing.",
+          "enum": [
+            "passed",
+            "failed",
+            "pending"
+          ]
         }
       },
       "dependentSchemas": {

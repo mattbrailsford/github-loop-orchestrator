@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/mattbrailsford/github-loop-orchestrator/main/schema/loop-orchestrator.schema.json
+# The sandbox config the end-to-end scenarios expect. Copy it to .github/loop-orchestrator.yml in
+# a throwaway repo; see e2e/README.md. Every route also works with the real routine.
+version: 1
+bots: ["claude[bot]"]
+claim:
+  label: loop/working
+  stale_after_minutes: 5   # short, so the sweep scenario doesn't take an hour
+run_limit:
+  runs: 3
+
+routes:
+  # 🤖 chain: a two-step chain, to test edges.
+  - name: chain
+    when: issue_comment.created
+    if:
+      addressed_with: ["🤖 chain"]
+      actor: maintainer
+    prompt: >-
+      This is a test of edges on issue {number} in {repo}. Post a reply with plain
+      `/loop-comment` saying "Chain step 1: handing on." Then hand on with `/loop-edge after`.
+
+  - name: after
+    when: edge
+    allow_from: [chain]
+    prompt: >-
+      Post a reply on issue {number} in {repo} with plain `/loop-comment`, saying "Chain step 2:
+      the edge arrived, hop {hop}." Then stop.
+
+  # 🤖 ready on a PR: only once its checks have passed.
+  - name: ready
+    when: pr_comment.created
+    if:
+      addressed_with: ["🤖 ready"]
+      actor: maintainer
+      checks: passed
+    prompt: >-
+      This is a test. The checks on PR {number} in {repo} have passed. Don't merge it; post a
+      reply with plain `/loop-comment` saying "Checks passed."
+
+  # Any other 🤖 comment: a reply, and a status comment kept up to date.
+  - name: say
+    when: issue_comment.created
+    if:
+      addressed_with: ["🤖", ":robot:"]
+      actor: maintainer
+    prompt: >-
+      A maintainer addressed you on issue {number} in {repo}. This is a test; don't do what they
+      asked. First, post a one-line reply that starts with "Heard:" and sums up what they asked,
+      with plain `/loop-comment`. Then keep a status comment up to date with
+      `/loop-comment status`, reading "Last request: " and the same summary.
+      {request}

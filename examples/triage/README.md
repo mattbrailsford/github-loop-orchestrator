@@ -128,7 +128,14 @@ Every `🤖` comment gets reactions from the workflow, within seconds:
 
 - 👀 when it's received. It either starts a run, or waits for the one already working.
 - 🚀 when its run starts.
-- 😕 if the routine couldn't be started. Comment again to retry.
+- 😕 if the routine couldn't be started (comment again to retry), or the issue hit its run limit.
+
+The config sets `run_limit` to 10 runs per issue. The eleventh gets 😕, and `loop/limit` goes on
+the issue, so a maintainer looks at why it's taking so many rounds. Taking the label off lets it
+go on.
+
+The config also starts in `mode: shadow`, so a new repo can watch what would happen before
+anything does. Switch it to `live` once the right routes match.
 
 A comment that waited gets its own run when the claim comes off, through the right route. So two
 quick `🤖` comments mean two runs, one after the other. A second `🤖 approve` finds the issue

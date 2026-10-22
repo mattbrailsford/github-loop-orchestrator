@@ -21,8 +21,9 @@ How the orchestrator works, what it owns, and what it leaves to each repo. Anyth
 - **It knows events, not meanings.** No label name, comment format, or workflow step is built in.
   A repo's config says what matters.
 - **It writes almost nothing to GitHub.** Every comment, label, and close is the routine's. The
-  orchestrator's only writes are the claim label and its reactions (👀, 🚀, 😕) on the comment
-  that triggered a run ([guards](#claims)). Otherwise its only output is a routine firing, or nothing.
+  orchestrator's only writes are the claim label, the run-limit label, and its reactions (👀, 🚀,
+  😕) on the comment that triggered a run ([guards](#claims)). Otherwise its only output is a
+  routine firing, or nothing.
 - **No match, no run.** An event that matches no route stops in the match step, before any model
   starts. There is no hidden "check everything" sweep; a sweep only runs when a repo declares
   one as a schedule route ([section 7](#7-schedules)).
@@ -218,8 +219,11 @@ One file, `.github/loop-orchestrator.yml`. A sketch of its shape:
 
 ```yaml
 version: 1
+mode: live          # or shadow, to watch before it acts; or stub, for tests
 bots: ["claude[bot]"]
 max_hops: 5
+run_limit:
+  runs: 10
 # code_repo: owner/other-repo   # only when issues and code live apart
 
 routes:
@@ -266,10 +270,41 @@ The label names above are only an example. The orchestrator treats them as strin
 - **`bots`** lists extra logins to treat as bots, on top of GitHub's own `Bot` type.
 - **`routine_login`** names the account the routine posts as, when that's a person's. Its events
   only count when addressed ([section 4](#addressing-the-routine)).
+- **`mode`** is `live`, `shadow`, or `stub` ([below](#modes)). `live` if not set.
+- **`claim`** and **`run_limit`** are guards ([section 8](#claims)).
 - **`code_repo`** says where the code lives, if not here. Optional, at the top or on one route.
   Setting it makes this config the hub for that repo's events too
   ([section 2](#when-issues-and-code-live-in-different-repos)).
 - **The first matching route wins.** One event, one run.
+
+### Modes
+
+| `mode` | Matches | Claims and reacts | Starts |
+|---|---|---|---|
+| `live` | yes | yes | the routine |
+| `shadow` | yes | no, it logs what it would have done | nothing |
+| `stub` | yes | yes | a scripted stand-in, with no AI |
+
+- **Shadow is for trying the loop on a real repo.** Everything runs up to the writes: matching,
+  the claim check, the run limit, the CI check. The fire job's log then says, item by item,
+  what it would have added, reacted, and fired. Nothing is written and nothing starts, so a
+  wrong route costs nothing. The prompt itself isn't logged, since logs on a public repo are
+  public. Switch to `live` once the right routes match.
+- **Stub is for testing the orchestrator.** A stand-in (`src/stub.mjs`) acts out what each route's
+  instruction asks of the shipped skills: a reply for each `/loop-comment`, a living comment for
+  each `/loop-comment <key>`, an edge for `/loop-edge <route>`, then the claim comes off. With
+  plain GitHub writes it costs nothing and takes seconds, so the scenarios in
+  [`e2e/`](../e2e/README.md) can run on every change. Hints in the issue make it fail to start
+  (`stub: refuse`) or die holding the claim (`stub: silent`).
+- **The stand-in's writes come from the workflow's token,** so they start no workflow runs. The
+  edge and the catch-up that the real routine's writes would set off, it runs itself, in the same
+  one-at-a-time job.
+- **The caller's `LOOP_MODE` variable overrides the config,** so a repo can switch without a
+  commit. The scenarios use this to switch a sandbox to `stub` and back.
+- **Shadow and stub need no fire secrets.**
+
+A stub pass proves the orchestrator's part. It can't prove the routine follows its
+instructions: if stub passes and the real routine fails, the fault is in a prompt or a skill.
 
 ### Why YAML, and its traps
 
@@ -326,8 +361,32 @@ Adding an event later is a change to this list, the schema, and the tests.
 | `addressed_with` | the comment, or the body of a newly opened issue or PR, starts with one of these prefixes, such as `🤖` ([below](#addressing-the-routine)) |
 | `state` | `open` or `closed` |
 | `in` | which repo the event came from: `tracker` or `code` ([section 2](#when-issues-and-code-live-in-different-repos)) |
+| `checks` | the PR's checks are `passed`, `failed`, or `pending` ([below](#checks)) |
 
 A label pattern may end in `*` to match a prefix, like `status/*`. Nothing else is a pattern.
+
+### Checks
+
+`checks: passed` lets a route rest on a fact rather than on what a run says about itself. "🤖
+merge" can then only start a run once CI is green, however sure the comment's author is.
+
+- **Read from GitHub,** on the PR's head commit: check runs and commit statuses both. Any failure
+  is `failed`; otherwise anything still running is `pending`; otherwise `passed`. Skipped and
+  neutral count as passing.
+- **The loop's own runs don't count.** The orchestrator's jobs are check runs too, and would
+  keep every PR pending.
+- **None at all matches nothing.** A PR with no checks is neither passed nor failed, so a repo
+  without CI can't use the condition by mistake.
+- **Pull request events and edges only.** An issue has no checks, so on an issue the condition
+  never matches; the config rejects it on an issue-only event.
+- **Checked twice:** at the match, and again just before firing, since CI can finish or fail
+  while an event waits its turn.
+- **Fails closed.** If the checks can't be read, the route doesn't match.
+- **Nothing fires when CI finishes.** The condition is checked when something else happens, such
+  as a comment or a label ([open questions](#10-open-questions)).
+
+The caller needs read access to checks, statuses, and actions for this, and the template asks
+for it.
 
 ### Mentions
 
@@ -645,8 +704,8 @@ Before firing, the second job adds a claim label to the issue or PR: `claim.labe
 
 - **No race.** The check and the label happen in the one-at-a-time job, against the item's
   labels as they are then, not as the event saw them.
-- **The route is checked again, too.** Before claiming, the step re-checks the route's label and
-  state conditions against the item as it is right then. A comment that waited its turn may find
+- **The route is checked again, too.** Before claiming, the step re-checks the route's label,
+  state, and checks conditions against the item as it is right then. A comment that waited its turn may find
   the issue has moved on, been closed, or been paused; then it's skipped, without a 👀. The
   routine's own re-check only has to cover the moments between the fire and its start.
 - **Released by the routine.** Every prompt ends with the claim's terms: remove the label as the
@@ -679,7 +738,7 @@ Only its own account's reactions count; a person adding the same emoji changes n
 |---|---|
 | 👀 | received, and will be handled: it started a run, or it's waiting for the run holding the claim |
 | 🚀 | a run started for it. A comment with 🚀 is never fired again. |
-| 😕 | the routine couldn't be started. Comment again to retry. |
+| 😕 | the routine couldn't be started (comment again to retry), or the [run limit](#the-run-limit) stopped it |
 
 **If the reactions can't be read,** nothing fires for that comment: without them there's no
 telling whether it already ran, and a skipped comment is retried by a later catch-up, while a
@@ -704,6 +763,29 @@ posts nothing can't set off a loop.
 
 **The cost:** two quick comments mean two runs, one after the other, rather than one run covering
 both. The second often finds nothing left to do.
+
+### The run limit
+
+A route can go round in circles: a run asks a question, the answer starts another run, and so
+on. Edges have `max_hops`, but a conversation in comments has no such bound. `run_limit` adds one
+per issue or PR:
+
+```yaml
+run_limit:
+  runs: 10            # the most runs one item may have
+  label: loop/limit   # the default
+```
+
+- **Counted from the record.** The runs are the workflow's own 🚀 reactions on the item's body and
+  comments, so the count needs no storage, and a person's 🚀 doesn't count.
+- **At the limit,** the next run is refused: its comment gets 😕, and the label goes on, so a
+  person looks before it goes on. While the label is on, nothing runs, and comments that were
+  waiting get 😕 too, so none is replayed later.
+- **Taking the label off** lets it go on, and starts the count again from then.
+- **Edges don't count,** and aren't stopped by it. `max_hops` already bounds a chain, and stopping
+  one halfway would leave the claim on with nobody to release it.
+- **Fails closed.** If the runs can't be counted, nothing fires, as with unreadable reactions.
+- **Off unless set.** The example sets 10.
 
 ### Releasing by hand, and pausing
 
@@ -751,8 +833,9 @@ Cases the claim doesn't cover, accepted on purpose:
 
 ### Write access
 
-The caller needs write access to issues and pull requests for the label and reactions, and the
-template asks for it. It also subscribes to `unlabeled`, so the catch-up sees a claim come off.
+The caller needs write access to issues and pull requests for the labels and reactions, and the
+template asks for it. It also asks for read access to checks, statuses, and actions, which only
+the [`checks`](#checks) condition uses. It also subscribes to `unlabeled`, so the catch-up sees a claim come off.
 Without write access, both fail with a warning, and the routine still fires, unclaimed.
 
 ## 9. What each repo owns
@@ -790,3 +873,7 @@ The [example](../examples/triage/) shows one repo's answers.
    mentions. **Unverified:** how a hosted routine is given its own GitHub credentials
    ([`IDENTITY.md`](IDENTITY.md) compares the options; `scripts/app-token.sh` makes an app's
    tokens, tested against a stand-in, not yet a real app).
+2. **An event when CI finishes.** `checks` is read when something else happens, so "run when CI
+   goes green" needs a comment or a label to set it off. GitHub doesn't send `check_suite` events
+   for checks made by Actions, to avoid loops. A `workflow_run` event on the repo's CI workflow
+   would work, but the caller would have to name that workflow.

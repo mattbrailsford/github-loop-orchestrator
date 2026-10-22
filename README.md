@@ -68,7 +68,11 @@ Giving the routine its own identity instead, such as your own GitHub App, is com
 
 Every action goes to a routine. The orchestrator's only writes are a claim label, so two runs
 never work on one item at once, and reactions on the comment that asked: 👀 when it's received,
-🚀 when its run starts, 😕 if it couldn't start.
+🚀 when its run starts, 😕 if it couldn't start. With a run limit set, it also adds a label when
+an issue has had too many runs, so a person looks before it goes round in circles.
+
+A route can also rest on a fact rather than on what a run says: `checks: passed` only matches a
+PR whose CI is green.
 
 ## Example
 
@@ -105,6 +109,9 @@ In order:
    [example](examples/triage/loop-orchestrator.yml), and set `routine_login` to your login. For
    editor help, add this first line:
    `# yaml-language-server: $schema=https://raw.githubusercontent.com/mattbrailsford/github-loop-orchestrator/main/schema/loop-orchestrator.schema.json`
+   - **Start with `mode: shadow`,** as the example does. The loop then logs what it would do and
+     does nothing, so you can check the right routes match on real events. Switch to `live`
+     when they do, in the config or with the repo variable `LOOP_MODE`.
 6. **Schedule routes, if you have any:** set up the ticker routine from
    [`templates/routine.md`](templates/routine.md#the-ticker), and list this repo in its prompt.
    A private repo can use GitHub's own timer instead (commented out in the caller template).
@@ -132,7 +139,7 @@ github-loop-orchestrator/
 │   ├── match.mjs             # matches one event: what could fire, with its prompt
 │   ├── fire.mjs              # claims, reacts, fires, and catches up, one item at a time
 │   └── validate.mjs          # checks a config, converted to JSON
-├── src/                      # config, events, mentions, cron, prompts, claims, GitHub calls
+├── src/                      # config, events, mentions, cron, prompts, claims, GitHub calls, the stand-in
 ├── schema/
 │   └── loop-orchestrator.schema.json   # editor help for the config
 ├── scripts/
@@ -150,6 +157,7 @@ github-loop-orchestrator/
 │   └── umbraco/              # optional: .NET SDK, SQL Server, and run-umbraco.sh for a routine
 ├── examples/
 │   └── triage/               # a worked config and the skills it expects
+├── e2e/                      # scenarios run against a sandbox repo, with a stand-in for the routine
 ├── docs/
 │   ├── DESIGN.md             # how it works, and why
 │   ├── IDENTITY.md           # who the routine posts as: the 🤖 prefix, your own app, a machine user
@@ -160,6 +168,10 @@ github-loop-orchestrator/
 Run the tests with `npm test`. Node 20 or newer, nothing to install. One test checks the example
 config and needs `yq`; it skips without it locally, and runs in CI.
 
+The end-to-end scenarios run the whole loop on a real sandbox repo, with a scripted stand-in in
+place of the routine, so they cost nothing: `node e2e/run.mjs --repo you/sandbox`. Setting one
+up is in [`e2e/README.md`](e2e/README.md).
+
 ## Status
 
 - [x] Design, in [docs/DESIGN.md](docs/DESIGN.md)
@@ -168,7 +180,10 @@ config and needs `yq`; it skips without it locally, and runs in CI.
       workflow, with tests
 - [x] Run on a test repo: an issue and a plain comment from the routine's account were ignored,
       a 🤖 comment fired the routine, and its reply started nothing
-- [ ] Edges and the ticker, on the test repo
+- [x] Claims, catch-up, edges, a sweep, and both kinds of comment, on the test repo with the
+      real routine. The tick was sent by hand; no ticker routine is set up yet
+- [x] Shadow mode, a stand-in routine for tests, a run limit, and a CI checks condition, with
+      tests
 - [ ] A routine with its own GitHub App identity: the token script is written and tested against
       a stand-in, not a real app
 - [ ] Triage skills that support what the example needs (`--unattended`, `--propose`,
@@ -176,7 +191,6 @@ config and needs `yq`; it skips without it locally, and runs in CI.
 
 **Not proven yet**, each marked in the design:
 
-- that a routine can send `repository_dispatch`, which edges and the ticker need,
 - that GitHub returns a PR's linked issue when it's in another repo,
 - that the routine fire API, still in beta, stays as it is.
 

@@ -2,7 +2,7 @@
 // Usage: match.mjs --config <config.json> --event-name <name> --event-path <payload.json> [--hub owner/name] [--out <file>]
 // --out writes the candidates to a file instead of a step output. Prompts carry request text, so
 // they must never travel through env or outputs, which GitHub prints in the log.
-// Reads GITHUB_REPOSITORY, GH_TOKEN, and GITHUB_OUTPUT from the environment.
+// Reads GITHUB_REPOSITORY, GITHUB_RUN_ID, GH_TOKEN, and GITHUB_OUTPUT from the environment.
 // Exit codes: 0 matched or no match, 2 the config is broken, 1 anything else.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -34,7 +34,12 @@ try {
   const config = JSON.parse(readFileSync(args.config, 'utf8'));
   const payload = JSON.parse(readFileSync(args['event-path'], 'utf8'));
   const event = normalizeEvent(args['event-name'], payload, workflowRepo);
-  const lookup = githubLookup({ token: process.env.GH_TOKEN, warn: (m) => console.log(`::warning::${m}`) });
+  const lookup = githubLookup({
+    token: process.env.GH_TOKEN,
+    warn: (m) => console.log(`::warning::${m}`),
+    runRepo: workflowRepo,
+    runId: process.env.GITHUB_RUN_ID ?? '',
+  });
 
   const result = await matchEvent({ config, event, workflowRepo, hubRepo, lookup });
   console.log(result.log);

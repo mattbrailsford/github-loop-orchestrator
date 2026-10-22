@@ -1,7 +1,7 @@
 name: loop-orchestrator (reusable)
 
 # Matches one GitHub event against the hub's .github/loop-orchestrator.yml and, on a match,
-# fires the repo's hosted routine with that route's prompt. It never writes to GitHub.
+# claims the item and fires the repo's hosted routine with that route's prompt.
 # A repo calls this from a small caller workflow; see templates/caller.yml.
 
 on:
@@ -14,6 +14,13 @@ on:
         required: false
         type: string
         default: ""
+      mode:
+        description: >-
+          Overrides the config's mode: live, shadow (decide and log only), or stub (a scripted
+          stand-in instead of the routine). The caller passes its LOOP_MODE variable here.
+        required: false
+        type: string
+        default: ""
       orchestrator_ref:
         description: Which ref of the orchestrator's scripts to run.
         required: false
@@ -21,11 +28,11 @@ on:
         default: main
     secrets:
       LOOP_FIRE_URL:
-        description: The routine's fire URL.
-        required: true
+        description: The routine's fire URL. Not used in shadow or stub mode.
+        required: false
       LOOP_FIRE_TOKEN:
-        description: The routine's bearer token.
-        required: true
+        description: The routine's bearer token. Not used in shadow or stub mode.
+        required: false
       LOOP_CONFIG_TOKEN:
         description: Only needed when config_repo is a private repo this repo's token can't read.
         required: false
@@ -138,11 +145,13 @@ jobs:
           HUB: ${{ inputs.config_repo || github.repository }}
           LOOP_FIRE_URL: ${{ secrets.LOOP_FIRE_URL }}
           LOOP_FIRE_TOKEN: ${{ secrets.LOOP_FIRE_TOKEN }}
+          MODE: ${{ inputs.mode }}
         run: |
           node orchestrator/bin/fire.mjs \
             --candidates "$RUNNER_TEMP/loop-candidates.json" \
             --config "$RUNNER_TEMP/loop-config.json" \
-            --hub "$HUB"
+            --hub "$HUB" \
+            --mode "$MODE"
 
   # On a tick: clears each claim a run never released, one item at a time, inside that item's own
   # queue, so it can't race a new event on the same item. Then catches up on what waited.
@@ -180,6 +189,7 @@ jobs:
           LOOP_FIRE_URL: ${{ secrets.LOOP_FIRE_URL }}
           LOOP_FIRE_TOKEN: ${{ secrets.LOOP_FIRE_TOKEN }}
           NUMBER: ${{ matrix.number }}
+          MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
           yq -o=json '.' hub/.github/loop-orchestrator.yml > "$RUNNER_TEMP/loop-config.json"
@@ -188,4 +198,5 @@ jobs:
           node orchestrator/bin/fire.mjs \
             --candidates "$RUNNER_TEMP/loop-candidates.json" \
             --config "$RUNNER_TEMP/loop-config.json" \
-            --hub "$HUB"
+            --hub "$HUB" \
+            --mode "$MODE"

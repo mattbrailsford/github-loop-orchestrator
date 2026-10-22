@@ -1,4 +1,4 @@
-import { claimOf, labelMatches } from './config.mjs';
+import { claimOf, labelMatches, runLimitOf } from './config.mjs';
 import { matchEvent } from './match.mjs';
 
 export const SEEN = 'eyes';
@@ -79,11 +79,45 @@ export function stillMatches(recheck, item, claimLabel) {
   return true;
 }
 
+// Shadow mode: every write and fire is logged as what it would have been, and nothing is sent.
+export function shadowWriter(log) {
+  const would = (what) => {
+    log(`  [shadow] would ${what}`);
+    return true;
+  };
+  return {
+    addLabel: (repo, number, label) => would(`add "${label}" to #${number}`),
+    removeLabel: (repo, number, label) => would(`remove "${label}" from #${number}`),
+    react: (t, content) => (would(`react ${content} on ${t.type === 'comment' ? `comment ${t.id}` : `#${t.number}`}`), null),
+    unreact: () => true,
+    comment: () => null,
+    editComment: () => true,
+  };
+}
+
+export function shadowFirer(log) {
+  return async (prompt, c) => {
+    log(`  [shadow] would fire the routine for "${c.route}" (a ${prompt.length}-character prompt)`);
+    return true;
+  };
+}
+
 // Runs what the match step decided, in order. lookup reads GitHub, gh writes the claim label and
 // reactions with the workflow's token, fireRoutine starts the routine. Returns whether every
 // fire that was attempted went through.
+//
+// fireRoutine(prompt, candidate) returns true or false, or { ok, followUp }: what a stand-in
+// routine did that the real one would have set off by itself, such as an edge, run here instead.
 export async function runCandidates({ candidates, config, workflowRepo, hubRepo, lookup, gh, fireRoutine, log, now = Date.now() }) {
   let ok = true;
+  const limit = runLimitOf(config);
+
+  // A trigger that won't get a run: 😕 in place of any 👀, so no catch-up replays it.
+  async function refuse(c, seen) {
+    if (!c.trigger) return;
+    if (seen?.eyes) await gh.unreact(c.trigger, seen.eyes);
+    if (!seen?.confused) await gh.react(c.trigger, FAILED);
+  }
 
   async function fire(c) {
     const where = c.item ? `${c.route ?? 'run'} on #${c.item.number}` : `"${c.route}"`;
@@ -93,19 +127,49 @@ export async function runCandidates({ candidates, config, workflowRepo, hubRepo,
       seen = await lookup.orchestratorReactions(c.trigger);
       if (!seen) {
         log(`${where}: couldn't read its reactions, so can't tell whether it already ran; skipped`);
-        return;
+        return 'skipped';
       }
       if (seen.rocket) {
         log(`${where}: a run already started for this; skipped`);
-        return;
+        return 'skipped';
       }
     }
 
     if (c.item && c.recheck) {
-      const now = await lookup.issue(c.item.repo, c.item.number);
-      if (now && !stillMatches(c.recheck, now, c.claim?.label)) {
+      const current = await lookup.issue(c.item.repo, c.item.number);
+      if (current && !stillMatches(c.recheck, current, c.claim?.label)) {
         log(`${where}: the issue has changed since the event and no longer matches the route; skipped`);
-        return;
+        return 'skipped';
+      }
+      if (c.recheck.checks) {
+        const checks = await lookup.checks(c.item.repo, c.item.number);
+        if (checks !== c.recheck.checks) {
+          log(`${where}: its checks are ${checks ?? 'unreadable'} now, not ${c.recheck.checks}; skipped`);
+          return 'skipped';
+        }
+      }
+    }
+
+    // Edges don't count: max_hops already bounds a chain, and stopping one halfway leaves it
+    // claimed with nobody to release it.
+    if (limit && c.item && !c.edge) {
+      const current = await lookup.issue(c.item.repo, c.item.number);
+      if ((current?.labels ?? []).some((l) => lower(l) === lower(limit.label))) {
+        log(`${where}: "${limit.label}" is on, so no more runs until a person takes it off`);
+        await refuse(c, seen);
+        return 'limited';
+      }
+      const since = await lookup.labelRemovedAt(c.item.repo, c.item.number, limit.label);
+      const started = await lookup.runsStarted(c.item.repo, c.item.number, since);
+      if (started === null) {
+        log(`${where}: couldn't count its runs, so can't tell whether it's over the limit; skipped`);
+        return 'skipped';
+      }
+      if (started >= limit.runs) {
+        log(`${where}: ${started} runs already, the limit is ${limit.runs}; adding "${limit.label}" for a person to look`);
+        await gh.addLabel(c.item.repo, c.item.number, limit.label);
+        await refuse(c, seen);
+        return 'limited';
       }
     }
 
@@ -121,17 +185,17 @@ export async function runCandidates({ candidates, config, workflowRepo, hubRepo,
         const claimAt = held ? await lookup.labelAddedAt(c.claim.repo, c.claim.number, c.claim.label) : null;
         if (c.edge.sentAt !== null && claimAt !== null && claimAt > c.edge.sentAt) {
           log(`${where}: this edge was already handed on; skipped as a repeat`);
-          return;
+          return 'skipped';
         }
         if (c.edge.sentAt === null) log(`${where}: the edge has no sent_at, so a repeat can't be told apart`);
       } else if (fresh) {
         if (c.if_claimed === 'skip') {
           log(`${where}: another run holds the claim; this label route skips while claimed`);
-          return;
+          return 'skipped';
         }
         if (c.trigger && !seen.eyes) await gh.react(c.trigger, SEEN);
         log(`${where}: another run holds the claim; waiting its turn`);
-        return;
+        return 'waiting';
       } else if (held) {
         log(`${where}: taking over a claim left for ${Math.round(age)} min`);
       }
@@ -144,10 +208,12 @@ export async function runCandidates({ candidates, config, workflowRepo, hubRepo,
     }
     const eyes = c.trigger ? seen.eyes ?? (await gh.react(c.trigger, SEEN)) : null;
 
-    if (await fireRoutine(c.prompt)) {
+    const result = await fireRoutine(c.prompt, c);
+    if (result === true || result?.ok) {
       if (c.trigger) await gh.react(c.trigger, STARTED);
       log(`${where}: fired`);
-      return;
+      for (const next of result?.followUp ?? []) await followUp(next);
+      return 'fired';
     }
 
     ok = false;
@@ -157,6 +223,16 @@ export async function runCandidates({ candidates, config, workflowRepo, hubRepo,
       if (eyes) await gh.unreact(c.trigger, eyes);
       await gh.react(c.trigger, FAILED);
     }
+    return 'failed';
+  }
+
+  // An event the stand-in routine set off, such as an edge, matched and run here.
+  async function followUp(next) {
+    if (next.type === 'catch-up') return catchUp(next.item);
+    if (next.type !== 'event') return;
+    const r = await matchEvent({ config, event: next.event, workflowRepo: hubRepo, hubRepo, lookup });
+    log(`  then: ${r.log}`);
+    for (const f of r.fires) if (f.type === 'fire') await fire(f);
   }
 
   // Replays the oldest thing still owed a run, through its own route: a new issue first, then
@@ -178,16 +254,18 @@ export async function runCandidates({ candidates, config, workflowRepo, hubRepo,
       for (const c of pendingComments(comments, claimAt)) replays.push({ what: `comment ${c.id}`, event: replayEvent(full, c) });
     }
 
+    let replayed = false;
     for (const { what, event } of replays) {
       const r = await matchEvent({ config, event, workflowRepo, hubRepo, lookup });
       const next = r.fires.find((f) => f.type === 'fire');
       if (next) {
         log(`#${target.number}: ${what} was waiting; replaying it`);
-        await fire(next);
-        return;
+        replayed = true;
+        // Over the limit, each waiting one is marked 😕 in turn, so none is left owed a run.
+        if ((await fire(next)) !== 'limited') return;
       }
     }
-    log(`#${target.number}: nothing was waiting`);
+    if (!replayed) log(`#${target.number}: nothing was waiting`);
   }
 
   // One stale claim, cleared in its item's own queue: checked again, removed, then caught up.

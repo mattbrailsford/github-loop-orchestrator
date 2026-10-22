@@ -40,9 +40,15 @@ const COMMENT_EVENTS = new Set(['issue_comment.created', 'pr_comment.created']);
 const OPENED_EVENTS = new Set(['issues.opened', 'pull_request.opened']);
 const LABELED_EVENTS = new Set(['issues.labeled', 'pull_request.labeled']);
 
-const TOP_KEYS = new Set(['version', 'bots', 'routine_login', 'max_hops', 'code_repo', 'claim', 'routes']);
+const TOP_KEYS = new Set(['version', 'mode', 'bots', 'routine_login', 'max_hops', 'code_repo', 'claim', 'run_limit', 'routes']);
+
+// live fires the routine. shadow decides and logs, and writes and fires nothing. stub acts the
+// routine out with a scripted stand-in, for testing the loop without the cost of real runs.
+export const MODES = ['live', 'shadow', 'stub'];
+export const CHECKS = ['passed', 'failed', 'pending'];
 
 export const DEFAULT_CLAIM = { label: 'loop/working', stale_after_minutes: 60 };
+export const DEFAULT_LIMIT_LABEL = 'loop/limit';
 const ROUTE_KEYS = new Set(['name', 'when', 'if', 'prompt', 'allow_from', 'code_repo', 'cron', 'if_claimed']);
 const CONDITION_KEYS = new Set([
   'label',
@@ -54,8 +60,10 @@ const CONDITION_KEYS = new Set([
   'addressed_with',
   'state',
   'in',
+  'checks',
 ]);
-const EDGE_CONDITION_KEYS = new Set(['has_label', 'lacks_label', 'state', 'in']);
+const EDGE_CONDITION_KEYS = new Set(['has_label', 'lacks_label', 'state', 'in', 'checks']);
+const PR_EVENTS = new Set(['pull_request.opened', 'pull_request.labeled', 'pr_comment.created', 'edge']);
 
 export const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -65,6 +73,7 @@ export const PLACEHOLDER_RE = /\{([A-Za-z_]+)\}/g;
 export const DEFAULT_MAX_HOPS = 5;
 
 
+const lower = (s) => (s ?? '').toLowerCase();
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isStringArray = (v) => Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === 'string' && s.length > 0);
 
@@ -151,6 +160,10 @@ function checkConditions(route, where, errors) {
   if ('in' in cond && !['tracker', 'code'].includes(cond.in)) {
     errors.push(`${where}.if.in: must be "tracker" or "code"`);
   }
+  if ('checks' in cond) {
+    if (!PR_EVENTS.has(route.when)) errors.push(`${where}.if.checks: only works with a pull request event or an edge`);
+    if (!CHECKS.includes(cond.checks)) errors.push(`${where}.if.checks: must be one of ${CHECKS.join(', ')}`);
+  }
 }
 
 function checkPrompt(route, where, errors) {
@@ -177,6 +190,7 @@ export function validateConfig(config) {
     if (!TOP_KEYS.has(key)) errors.push(`unknown top-level key "${key}"`);
   }
   if (config.version !== 1) errors.push('version: must be 1');
+  if ('mode' in config && !MODES.includes(config.mode)) errors.push(`mode: must be one of ${MODES.join(', ')}`);
   if ('bots' in config && !(Array.isArray(config.bots) && config.bots.every((b) => typeof b === 'string' && b.length > 0))) {
     errors.push('bots: must be a list of logins');
   }
@@ -199,6 +213,23 @@ export function validateConfig(config) {
       }
       if ('stale_after_minutes' in c && !(Number.isInteger(c.stale_after_minutes) && c.stale_after_minutes >= 5 && c.stale_after_minutes <= 1440)) {
         errors.push('claim.stale_after_minutes: must be a whole number from 5 to 1440');
+      }
+    }
+  }
+  if ('run_limit' in config) {
+    const l = config.run_limit;
+    if (!isObject(l)) errors.push('run_limit: must be a map with runs, and optionally label');
+    else {
+      for (const key of Object.keys(l)) {
+        if (!['runs', 'label'].includes(key)) errors.push(`run_limit: unknown key "${key}"`);
+      }
+      if (!(Number.isInteger(l.runs) && l.runs >= 1 && l.runs <= 100)) errors.push('run_limit.runs: must be a whole number from 1 to 100');
+      if ('label' in l && !(typeof l.label === 'string' && l.label.length > 0 && l.label.length <= 50 && !l.label.includes('*'))) {
+        errors.push('run_limit.label: must be a label name, without "*"');
+      }
+      const claim = claimOf(config);
+      if (claim && lower(l.label ?? DEFAULT_LIMIT_LABEL) === lower(claim.label)) {
+        errors.push('run_limit.label: must differ from claim.label');
       }
     }
   }
@@ -297,5 +328,16 @@ export function codeReposOf(config) {
 
 export function claimOf(config) {
   if (config.claim === false) return null;
-  return { ...DEFAULT_CLAIM, ...(config.claim ?? {}) };
+  return { ...DEFAULT_CLAIM, ...(isObject(config.claim) ? config.claim : {}) };
+}
+
+// How many runs one issue or PR may have before a person has to let it go on. null when off.
+export function runLimitOf(config) {
+  if (!isObject(config.run_limit)) return null;
+  return { runs: config.run_limit.runs, label: config.run_limit.label ?? DEFAULT_LIMIT_LABEL };
+}
+
+// The override comes from the caller's LOOP_MODE variable, so a repo can switch without a commit.
+export function modeOf(config, override = '') {
+  return override || config.mode || 'live';
 }
