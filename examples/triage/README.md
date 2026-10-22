@@ -4,9 +4,10 @@ A worked example, and the first thing to prove on a real repo. A new issue gets 
 triage. A maintainer answers with a comment that starts with 🤖, to approve it, pick another
 state, or correct it. The routine follows.
 
-It assumes two skills in the routine: `/issue-triage`, which classifies an issue, and
-`/investigate-bug`, which finds a bug's cause. Use your own; the names only have to match the
-route prompts. Everything specific lives here or in those skills: what the labels mean, what
+It uses three skills from [umbraco-devkit](https://github.com/mattbrailsford/umbraco-devkit)
+in the routine: `/issue-triage`, which classifies an issue, `/investigate-bug`, which finds a
+bug's cause, and `/issue-backlog`, which works through what's left. Use your own; the names and
+flags only have to match the route prompts. Everything specific lives here or in those skills: what the labels mean, what
 gets posted, and how. The orchestrator only sees the routes in
 [`loop-orchestrator.yml`](loop-orchestrator.yml).
 
@@ -18,10 +19,11 @@ gets posted, and how. The orchestrator only sees the routes in
 | `maintainer-says` | a maintainer comments starting with 🤖 | does what they asked: approves, picks another state, corrects, or looks again |
 | `reporter-replies` | the reporter replies on a drafted or needs-info issue | proposes again, using the new detail |
 | `investigate` | an edge from `maintainer-says`, when the issue ends in `state/needs-investigation` | investigates, and proposes the result |
+| `backlog` | weekday mornings, 06:00 UTC | triages and investigates what the events missed, as proposals |
 | `stale-drafts` | weekday mornings, 07:00 UTC | sends maintainers one reminder about proposals waiting more than 5 days |
 
 Investigating only reads the code and runs it, so that edge runs without a second approval.
-Nothing in these routes writes code. `stale-drafts` needs the ticker routine, or GitHub's
+Nothing in these routes writes code. `backlog` and `stale-drafts` need the ticker routine, or GitHub's
 timer in a private repo ([`templates/routine.md`](../../templates/routine.md#the-ticker)).
 
 ## Talking to the routine
@@ -37,8 +39,8 @@ made them. This example works around that:
   own label changes can't start anything either.
 - **Typos are fine.** The orchestrator only checks for 🤖. Everything after it goes to the
   routine as the request, and the model reads it: "🤖 aprove" works.
-- **The routine says what it understood.** It updates the proposal comment ("Approved as needs
-  investigation"), so a misread shows straight away, and another 🤖 comment fixes it.
+- **The routine says what it understood.** The proposal's heading changes to "Approved: needs
+  investigation · by @you", so a misread shows straight away, and another 🤖 comment fixes it.
 
 One side effect: an issue opened from the routine's account isn't triaged on its own, since
 that account's events only count when addressed. Start its body with 🤖 to have it triaged.
@@ -81,42 +83,46 @@ prompts, and have the skills leave paths and code out of public comments when it
 - An issue with `state/drafted` is never proposed again unless someone replies. That stops the
   same issue being triaged, and paid for, twice.
 
-## The comment
+## The proposal
 
-The proposal is one comment per issue, written with `/loop-comment triage`. The key makes the
-skill find it again by a hidden marker and edit it in place, so the reporter isn't notified every
-time it changes. Each answer to a maintainer's `🤖` request is a separate short reply, written
-with plain `/loop-comment`, so the maintainer is notified. Either way, a write that errors can't
-leave two copies.
-
-While it's a proposal:
+A proposal is one comment per issue, written for maintainers. It's folded, so the reporter
+sees one line, plainly marked as not decided, and a maintainer can tell where the issue stands
+without opening it:
 
 ```markdown
-<!-- loop:triage -->
-> **Automated first look.** A maintainer will check this and may change it.
+<!-- issue-triage:proposal -->
+<details><summary><b>Proposed: needs info</b> · automated first look, not decided</summary>
 
-**Proposed:** needs investigation
+**Why:** the indexer skips content with no `tags` property, and the report doesn't say which
+versions it moved between.
 
-Thanks for the report. It looks like a real problem, and we'll look into it. We haven't
-confirmed the cause yet.
+**Info needed:**
+- Which package version they updated from and to: the property lookup changed in 3.0.
 
-<details><summary>Notes for the investigation</summary>
+**Notes for the next look**
+- **Known so far:** ...
+- **Checked:** ...
 
-- **Symptom:** ...
-- **Likely area:** ...
-- **Start with:** ...
-
+To answer: start a comment with 🤖.
 </details>
 ```
 
-Once finalized, the quoted line and the "Proposed" line go.
-
-- **A plain part for the reporter,** then folded notes for whoever picks the issue up next.
-- **Questions wait for approval.** A `state/needs-info` proposal lists what's missing in the
-  notes, but asks the reporter nothing until a maintainer approves. A wrong question sends the
-  reporter off to dig for nothing.
+- **A maintainer approves the decision, not the wording.** The reply's points ("Info needed",
+  "Duplicate of", "Reason") are the limit of what gets sent. Once approved, the routine words a
+  friendly reply from those points and nothing more, and posts it as a new comment, so the
+  reporter is notified.
+- **The proposal stays as the record.** Its heading changes to "Approved: needs info · by
+  @you".
+- **A correction or a fresh look** edits the proposal, with the heading "changed after @you's
+  answer", plus a one-line reply, since an edit notifies nobody.
 - **A security report gets nothing on the issue.** No comment, no label. The routine sends
   maintainers a private notification instead ([below](#security-flags)).
+- **The `To answer` line** comes from the repo's `CLAUDE.md`: add `- Proposal answers: start a
+  comment with 🤖` to its `## Issue tracker` section. The skill also uses it to tell an answer
+  from maintainers talking to each other. Keep it the same as `addressed_with` in the config:
+  one decides what starts a run, the other what the skill counts as an answer.
+
+The format is the skill's, set out in its Proposing on the tracker section.
 
 ## Claiming an issue
 
@@ -165,6 +171,7 @@ That covers the rare case where push was unavailable.
 | To | Do this |
 |---|---|
 | Approve | comment `🤖 approve`, or `🤖 yes`, or anything that means it |
+| Approve, but trim the reply | `🤖 approve, but skip the log question` |
 | Choose another state | comment `🤖 needs info`, `🤖 ready`, and so on |
 | Correct it | comment in plain words: `🤖 dupe of #41`, `🤖 this is expected behavior` |
 | Ask for a fresh look | `🤖 look again, the stack trace is different` |
@@ -173,31 +180,22 @@ That covers the rare case where push was unavailable.
 
 A comment without 🤖 is just a comment. The routine never sees it.
 
-## What the skills need to support
+## What the skills do
 
-Triage skills built for a chat expect a person to answer questions and approve each write. To
-run from these routes, they need:
+The skills run the same as in a chat, with two flags:
 
-1. **`--unattended`:** no questions, one issue per run, and a clean stop when something only a
-   person could supply is missing.
-2. **`--propose` and `--respond`:** the approval moves from the chat to the tracker.
-   `--propose` posts the marked comment and `state/drafted`. `--respond` reads a maintainer's
-   request in plain words, acts on it (approve, another state, a correction, a fresh look), and
-   updates the comment to say what it understood.
-3. **`--propose` on the investigation skill,** so its result is proposed the same way.
-4. **Nothing to claim.** The orchestrator claims the issue and tells the routine when to release
-   it ([Claiming an issue](#claiming-an-issue)). The skill only has to add `state/drafted` when
-   it proposes.
-5. **Never start a comment with 🤖,** which would address the routine itself.
-6. **A private notification for security flags,** through `/loop-notify`, in place of telling
-   someone in the chat. Without it, an unattended run has no private way to tell anyone, so it
-   stops and leaves the issue unlabeled.
-7. **Respecting `{code_private}`:** no file paths or code in public comments when it's `true`.
-8. **Tests** for each: an unattended run asks no questions, `--propose` never sets a final state,
-   `--respond` acts on a misspelled approval, and a security report gets no lasting label.
+- **`--unattended`:** no questions, and a clean stop when setup needs a person. A batch run takes
+  at most 10 issues.
+- **`--via tracker`:** the approval happens on the issue. With no proposal yet, it proposes and
+  adds `state/drafted`, never the final state. With one, it reads the newest answer since, from
+  someone with write access, and acts on it when it settles the outcome and the reply, or
+  proposes again when it doesn't. Other new comments mean it proposes again with them.
+- **A security report** gets no write at all. The skill returns the flag and the issue ID, and
+  the route prompt sends the private notification.
 
-Firing the `investigate` edge is in the route's prompt, not the skill. The skill doesn't need to
-know what runs next.
+The loop's own parts stay in the route prompts: `/loop-notify`, `/loop-edge`, and leaving out
+claimed or paused issues. The skills don't know they run in a loop. Each flag has an eval in the
+devkit.
 
 ## The routine
 
@@ -218,11 +216,12 @@ know what runs next.
 ## What "it works" means
 
 - [ ] A new issue gets `state/drafted` and one marked comment within a few minutes.
-- [ ] `🤖 approve` edits that comment and swaps `state/drafted` for the proposed state. No new
-      comment.
+- [ ] `🤖 approve` posts a reply within the proposal's points, swaps `state/drafted` for the
+      proposed state, and marks the proposal approved.
 - [ ] `🤖 aprove` (misspelled) does the same.
-- [ ] `🤖 needs info` rewrites the comment for that state.
-- [ ] `🤖 dupe of #1` rewrites the comment to say so.
+- [ ] `🤖 approve, but skip <a point>` leaves that point out of the reply.
+- [ ] `🤖 look again, ...` edits the proposal and posts a one-line reply, with no final state.
+- [ ] `🤖 dupe of #1` closes it as a duplicate, with a reply linking #1.
 - [ ] A maintainer comment without 🤖 starts nothing.
 - [ ] A 🤖 comment from someone without write access starts nothing.
 - [ ] The routine's own comments and labels start nothing, even though they're under your name.

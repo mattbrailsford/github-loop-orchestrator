@@ -34,10 +34,13 @@ routes:
     if:
       lacks_label: ["state/*", "loop/paused"]
     prompt: >-
-      Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}).
+      Run /issue-triage {number} --unattended --via tracker for {repo} (code in {code_repo}).
+      If it flags a possible security report, post nothing, and call /loop-notify as private
+      with the issue link and "possible security report, please check".
 
   # Everything a maintainer says to the routine: approve, pick another state, correct it, or
-  # ask for a fresh look. The skill reads the request, typos and all, and acts on it.
+  # ask for a fresh look. The skill finds the answer on the issue, typos and all, and acts on
+  # it. Keep this prefix the same as "Proposal answers" in the repo's CLAUDE.md.
   - name: maintainer-says
     when: issue_comment.created
     if:
@@ -45,11 +48,8 @@ routes:
       actor: maintainer
       lacks_label: ["loop/paused"]
     prompt: >-
-      Run /issue-triage {number} --unattended --respond for {repo} (code in {code_repo}).
-      A maintainer replied to its proposal; act on what they asked: {request}
-      Update the proposal with `/loop-comment triage` to say what you understood, then answer
-      the maintainer with a one-line `/loop-comment` reply saying what you did, so they're
-      notified and a misread shows straight away.
+      Run /issue-triage {number} --unattended --via tracker for {repo} (code in {code_repo}).
+      @{actor} answered its proposal; the skill finds the answer on the issue.
       If the issue ends in state/needs-investigation, hand on with `/loop-edge investigate`.
 
   - name: reporter-replies
@@ -59,8 +59,10 @@ routes:
       lacks_label: ["loop/paused"]
       actor: author
     prompt: >-
-      Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}),
+      Run /issue-triage {number} --unattended --via tracker for {repo} (code in {code_repo}),
       using reporter comment {comment_id} as new detail.
+      If it flags a possible security report, post nothing, and call /loop-notify as private
+      with the issue link and "possible security report, please check".
 
   # Investigating only reads and runs code, so it needs no second approval.
   - name: investigate
@@ -69,8 +71,21 @@ routes:
     if:
       lacks_label: ["loop/paused"]
     prompt: >-
-      Run /investigate-bug {number} --unattended --propose for {repo} (code in {code_repo}).
-      Hop {hop}.
+      Run /investigate-bug {number} --unattended --via tracker for {repo} (code in {code_repo}).
+      If it flags a possible security report, post nothing, and call /loop-notify as private
+      with the issue link and "possible security report, please check". Hop {hop}.
+
+  # Weekday mornings, 06:00 UTC: triage and investigate what the events missed, such as issues
+  # from before the loop. It isn't about one issue, so it holds no claim: it leaves claimed
+  # and paused issues alone itself.
+  - name: backlog
+    when: schedule
+    cron: "0 6 * * 1-5"
+    prompt: >-
+      Run /issue-backlog --unattended --via tracker for {repo} (code in {code_repo}). Leave out
+      issues labeled loop/working or loop/paused. For each possible security report, post
+      nothing, and call /loop-notify as private with the issue link and "possible security
+      report, please check".
 
   # Weekday mornings, 07:00 UTC: one reminder about proposals nobody has answered.
   - name: stale-drafts
