@@ -112,9 +112,10 @@ export function githubLookup({ token, apiUrl = 'https://api.github.com', warn = 
       return out;
     },
 
-    // Open issues and PRs carrying the label.
+    // Issues and PRs carrying the label, open or closed. A closed one can still hold a claim if its
+    // run died, and reopening it would find it claimed.
     async claimedItems(repo, label) {
-      const r = await get(`/repos/${repo}/issues?labels=${encodeURIComponent(label)}&state=open&per_page=100`);
+      const r = await get(`/repos/${repo}/issues?labels=${encodeURIComponent(label)}&state=all&per_page=100`);
       return r.ok ? r.body.map((i) => i.number) : [];
     },
 

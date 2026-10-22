@@ -1,4 +1,4 @@
-import { claimOf } from './config.mjs';
+import { claimOf, labelMatches } from './config.mjs';
 import { matchEvent } from './match.mjs';
 
 export const SEEN = 'eyes';
@@ -68,6 +68,17 @@ export function replayOpened(item, claimLabel) {
   };
 }
 
+// Whether the item, as it is now, still meets the route's label and state conditions. The claim
+// label itself is left out, since it's this step's own bookkeeping.
+export function stillMatches(recheck, item, claimLabel) {
+  if (!recheck) return true;
+  const labels = (item.labels ?? []).filter((l) => !claimLabel || lower(l) !== lower(claimLabel));
+  if (recheck.has_label && !labels.some((l) => recheck.has_label.some((p) => labelMatches(p, l)))) return false;
+  if (recheck.lacks_label && labels.some((l) => recheck.lacks_label.some((p) => labelMatches(p, l)))) return false;
+  if (recheck.state && item.state !== recheck.state) return false;
+  return true;
+}
+
 // Runs what the match step decided, in order. lookup reads GitHub, gh writes the claim label and
 // reactions with the workflow's token, fireRoutine starts the routine. Returns whether every
 // fire that was attempted went through.
@@ -86,6 +97,14 @@ export async function runCandidates({ candidates, config, workflowRepo, hubRepo,
       }
       if (seen.rocket) {
         log(`${where}: a run already started for this; skipped`);
+        return;
+      }
+    }
+
+    if (c.item && c.recheck) {
+      const now = await lookup.issue(c.item.repo, c.item.number);
+      if (now && !stillMatches(c.recheck, now, c.claim?.label)) {
+        log(`${where}: the issue has changed since the event and no longer matches the route; skipped`);
         return;
       }
     }
@@ -185,6 +204,11 @@ export async function runCandidates({ candidates, config, workflowRepo, hubRepo,
     }
     log(`#${target.number}: clearing a claim left for ${Math.round(age)} min`);
     await gh.removeLabel(target.repo, target.number, claim.label);
+    // A closed item has nothing to catch up on; reopening it is a new start.
+    if (item.state === 'closed') {
+      log(`#${target.number}: it's closed, so nothing is replayed`);
+      return;
+    }
     await catchUp(target);
   }
 

@@ -393,3 +393,45 @@ test('a new issue that already ran is not caught up', async () => {
   await run(w, [{ type: 'catch-up', item: { repo: HUB, number: 7 } }]);
   assert.equal(w.state.fired.length, 0);
 });
+
+// --- checking again before firing ------------------------------------------------------
+
+test('the route is checked again against the issue as it is now', async () => {
+  const w = world({ labels: ['state/drafted'] });
+  await run(w, [{ ...fireFor(), recheck: { has_label: null, lacks_label: ['state/*'], state: null } }]);
+  assert.equal(w.state.fired.length, 0);
+  assert.match(w.state.log.join('\n'), /no longer matches the route; skipped/);
+  assert.equal(w.state.reactions.c555, undefined, 'no 👀 for something that will not run');
+});
+
+test("the claim label doesn't count when checking again", async () => {
+  const w = world({ labels: ['loop/working'], claimAt: min(-90) });
+  await run(w, [{ ...fireFor(), recheck: { has_label: null, lacks_label: ['loop/*'], state: null } }]);
+  assert.equal(w.state.fired.length, 1);
+});
+
+test('a paused issue is left alone, even by a comment that was already waiting', async () => {
+  const w = world({ labels: ['loop/paused'] });
+  await run(w, [{ ...fireFor(), recheck: { has_label: null, lacks_label: ['loop/paused'], state: null } }]);
+  assert.equal(w.state.fired.length, 0);
+});
+
+test('a closed issue is skipped by a route that needs it open', async () => {
+  const w = world({ item: { state: 'closed' } });
+  await run(w, [{ ...fireFor(), recheck: { has_label: null, lacks_label: null, state: 'open' } }]);
+  assert.equal(w.state.fired.length, 0);
+});
+
+test('a stale claim on a closed issue is cleared, and nothing is replayed', async () => {
+  const w = world({
+    labels: ['loop/working'],
+    claimAt: min(-120),
+    item: { state: 'closed' },
+    comments: [comment('950', '@claude hello?', min(-100))],
+    reactions: { c950: { eyes: 1 } },
+  });
+  await run(w, [{ type: 'sweep-item', item: { repo: HUB, number: 7 } }]);
+  assert.equal(w.state.labels.has('loop/working'), false);
+  assert.equal(w.state.fired.length, 0);
+  assert.match(w.state.log.join('\n'), /it's closed, so nothing is replayed/);
+});

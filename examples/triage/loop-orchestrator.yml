@@ -18,11 +18,13 @@ claim:
   stale_after_minutes: 60
 # code_repo: owner/code-repo   # set when this tracker is separate from the code
 
+# loop/paused on an issue keeps the loop out of it: every route below skips it. Remove the label
+# to let the loop back in. Comments posted while it was on aren't picked up afterwards.
 routes:
   - name: new-issue
     when: issues.opened
     if:
-      lacks_label: ["state/*"]
+      lacks_label: ["state/*", "loop/paused"]
     prompt: >-
       Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}).
 
@@ -33,16 +35,19 @@ routes:
     if:
       addressed_with: ["🤖", ":robot:"]
       actor: maintainer
+      lacks_label: ["loop/paused"]
     prompt: >-
       Run /issue-triage {number} --unattended --respond for {repo} (code in {code_repo}).
       A maintainer replied to its proposal; act on what they asked: {request}
-      Update the proposal comment to say what you understood, so a misread shows straight away.
+      Update the proposal comment with `/loop-comment triage` to say what you understood, so a
+      misread shows straight away.
       If the issue ends in state/needs-investigation, hand on with `/loop-edge investigate`.
 
   - name: reporter-replies
     when: issue_comment.created
     if:
       has_label: ["state/drafted", "state/needs-info"]
+      lacks_label: ["loop/paused"]
       actor: author
     prompt: >-
       Run /issue-triage {number} --unattended --propose for {repo} (code in {code_repo}),
@@ -52,6 +57,8 @@ routes:
   - name: investigate
     when: edge
     allow_from: [maintainer-says]
+    if:
+      lacks_label: ["loop/paused"]
     prompt: >-
       Run /investigate-bug {number} --unattended --propose for {repo} (code in {code_repo}).
       Hop {hop}.

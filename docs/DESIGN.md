@@ -645,6 +645,10 @@ Before firing, the second job adds a claim label to the issue or PR: `claim.labe
 
 - **No race.** The check and the label happen in the one-at-a-time job, against the item's
   labels as they are then, not as the event saw them.
+- **The route is checked again, too.** Before claiming, the step re-checks the route's label and
+  state conditions against the item as it is right then. A comment that waited its turn may find
+  the issue has moved on, been closed, or been paused; then it's skipped, without a 👀. The
+  routine's own re-check only has to cover the moments between the fire and its start.
 - **Released by the routine.** Every prompt ends with the claim's terms: remove the label as the
   last step, whatever happened. That's the routine's only duty. It never handles other people's
   comments; they get their own turn.
@@ -701,6 +705,17 @@ posts nothing can't set off a loop.
 **The cost:** two quick comments mean two runs, one after the other, rather than one run covering
 both. The second often finds nothing left to do.
 
+### Releasing by hand, and pausing
+
+- **To force a release,** remove the claim label. That's an "unlabeled" event from a person, so
+  the catch-up runs and anything waiting gets its turn. Use it for a run that's stuck, rather
+  than waiting for the claim to go stale.
+- **To keep the loop out of an issue,** add a pause label, and give the routes a condition such as
+  `lacks_label: ["loop/paused"]`. The orchestrator has no built-in pause; the label is whatever
+  the config checks for. Removing the claim label isn't a pause, since the catch-up may start the
+  next waiting comment straight away. Comments posted while an issue is paused aren't picked up
+  when the pause comes off.
+
 ### Stale claims
 
 A claim older than `claim.stale_after_minutes` (60 if not set) is treated as abandoned, for a
@@ -708,7 +723,9 @@ run that died before releasing. It's cleared in two ways:
 
 - **The next event on that item** takes it over, and the stale run's waiting comments follow when
   the new run releases.
-- **Each hourly tick sweeps them,** if the hub has a ticker. The tick lists stale claims, and a
+- **Each hourly tick sweeps them,** if the hub has a ticker. It checks closed issues too: a closed
+  issue whose run died would otherwise stay claimed for good, and reopening it would find it
+  claimed. A closed issue's claim is cleared without any catch-up. The tick lists stale claims, and a
   separate job per item clears each one inside that item's own one-at-a-time queue, so it can't
   race a new event there, then runs the catch-up. Without a ticker, a stale claim waits for the
   next event on its item.

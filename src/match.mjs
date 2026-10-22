@@ -211,6 +211,13 @@ export async function matchEvent({ config, event, workflowRepo, hubRepo, lookup 
         edge: event.when === 'edge' ? { sentAt: event.edge.sentAt ?? null } : null,
         if_claimed: route.if_claimed ?? null,
         trigger: triggerOf(event),
+        // Checked again against the item as it is when the claim-and-fire step gets to it, which
+        // can be minutes later for a comment that waited its turn.
+        recheck: {
+          has_label: c.has_label ?? null,
+          lacks_label: c.lacks_label ?? null,
+          state: c.state ?? null,
+        },
       },
       tellNumber(`matched route "${route.name}"`),
     );

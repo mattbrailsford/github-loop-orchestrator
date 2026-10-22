@@ -83,13 +83,14 @@ prompts, and have the skills leave paths and code out of public comments when it
 
 ## The comment
 
-One comment per issue, found again by a hidden marker, and edited in place so the reporter isn't
-notified every time it changes.
+One comment per issue, written with `/loop-comment triage`. The skill finds it again by a hidden
+marker and edits it in place, so the reporter isn't notified every time it changes, and a write
+that errors can't leave two copies.
 
 While it's a proposal:
 
 ```markdown
-<!-- loop: triage -->
+<!-- loop:triage -->
 > **Automated first look.** A maintainer will check this and may change it.
 
 **Proposed:** needs investigation
