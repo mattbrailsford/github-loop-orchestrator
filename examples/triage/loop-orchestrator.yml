@@ -34,9 +34,10 @@ routes:
     if:
       lacks_label: ["state/*", "loop/paused"]
     prompt: >-
-      Run /issue-triage {number} --unattended --via tracker for {repo} (code in {code_repo}).
+      Run /issue-triage {number} --unattended --via-tracker for {repo} (code in {code_repo}).
       If it flags a possible security report, post nothing, and call /loop-notify as private
       with the issue link and "possible security report, please check".
+      If the issue ends in state/needs-investigation, hand on with `/loop-edge investigate`.
 
   # Everything a maintainer says to the routine: approve, pick another state, correct it, or
   # ask for a fresh look. The skill finds the answer on the issue, typos and all, and acts on
@@ -48,7 +49,7 @@ routes:
       actor: maintainer
       lacks_label: ["loop/paused"]
     prompt: >-
-      Run /issue-triage {number} --unattended --via tracker for {repo} (code in {code_repo}).
+      Run /issue-triage {number} --unattended --via-tracker for {repo} (code in {code_repo}).
       @{actor} answered its proposal; the skill finds the answer on the issue.
       If the issue ends in state/needs-investigation, hand on with `/loop-edge investigate`.
 
@@ -59,19 +60,21 @@ routes:
       lacks_label: ["loop/paused"]
       actor: author
     prompt: >-
-      Run /issue-triage {number} --unattended --via tracker for {repo} (code in {code_repo}),
+      Run /issue-triage {number} --unattended --via-tracker for {repo} (code in {code_repo}),
       using reporter comment {comment_id} as new detail.
       If it flags a possible security report, post nothing, and call /loop-notify as private
       with the issue link and "possible security report, please check".
+      If the issue ends in state/needs-investigation, hand on with `/loop-edge investigate`.
 
   # Investigating only reads and runs code, so it needs no second approval.
   - name: investigate
     when: edge
-    allow_from: [maintainer-says]
+    # From new-issue and reporter-replies too, once needs-investigation is on Auto-apply.
+    allow_from: [new-issue, maintainer-says, reporter-replies]
     if:
       lacks_label: ["loop/paused"]
     prompt: >-
-      Run /investigate-bug {number} --unattended --via tracker for {repo} (code in {code_repo}).
+      Run /investigate-bug {number} --unattended --via-tracker for {repo} (code in {code_repo}).
       If it flags a possible security report, post nothing, and call /loop-notify as private
       with the issue link and "possible security report, please check". Hop {hop}.
 
@@ -82,7 +85,7 @@ routes:
     when: schedule
     cron: "0 6 * * 1-5"
     prompt: >-
-      Run /issue-backlog --unattended --via tracker for {repo} (code in {code_repo}). Leave out
+      Run /issue-backlog --unattended --via-tracker for {repo} (code in {code_repo}). Leave out
       issues labeled loop/working or loop/paused. For each possible security report, post
       nothing, and call /loop-notify as private with the issue link and "possible security
       report, please check".
@@ -95,3 +98,12 @@ routes:
       List the open issues in {repo} that have had state/drafted for more than 5 days.
       If there are any, send maintainers one /loop-notify with the count and links.
       Don't comment on or change the issues.
+
+  # First of the month, 08:00 UTC: how proposals have fared, and whether to auto-apply more
+  # outcomes or fewer. The skill only suggests; a person edits the Auto-apply line.
+  - name: trust-report
+    when: schedule
+    cron: "0 8 1 * *"
+    prompt: >-
+      Run /issue-triage trust --unattended for {repo}. Send maintainers one /loop-notify with
+      its suggestion and the numbers behind it. Don't comment on or change any issue.

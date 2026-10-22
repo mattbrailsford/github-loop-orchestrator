@@ -20,6 +20,7 @@ gets posted, and how. The orchestrator only sees the routes in
 | `reporter-replies` | the reporter replies on a drafted or needs-info issue | proposes again, using the new detail |
 | `investigate` | an edge from `maintainer-says`, when the issue ends in `state/needs-investigation` | investigates, and proposes the result |
 | `backlog` | weekday mornings, 06:00 UTC | triages and investigates what the events missed, as proposals |
+| `trust-report` | the first of each month, 08:00 UTC | tells maintainers how proposals fared, and whether to auto-apply more outcomes or fewer |
 | `stale-drafts` | weekday mornings, 07:00 UTC | sends maintainers one reminder about proposals waiting more than 5 days |
 
 Investigating only reads the code and runs it, so that edge runs without a second approval.
@@ -43,7 +44,8 @@ made them. This example works around that:
   investigation · by @you", so a misread shows straight away, and another 🤖 comment fixes it.
 
 One side effect: an issue opened from the routine's account isn't triaged on its own, since
-that account's events only count when addressed. Start its body with 🤖 to have it triaged.
+that account's events only count when addressed. Comment `🤖 triage this` on it to have it
+triaged.
 
 If the routine later gets its own account or GitHub App, set `routine_login` to that, and
 nothing else here needs to change ([`docs/IDENTITY.md`](../../docs/IDENTITY.md)).
@@ -122,7 +124,33 @@ To answer: start a comment with 🤖.
   from maintainers talking to each other. Keep it the same as `addressed_with` in the config:
   one decides what starts a run, the other what the skill counts as an answer.
 
-The format is the skill's, set out in its Proposing on the tracker section.
+The format is the skill's, set out in its Approval on the tracker section. Each round of
+triage gets its own proposal comment, so the approved ones stay as the record.
+
+## Trusting it more over time
+
+Start with every outcome needing approval. As the record shows it gets an outcome right, let
+that outcome skip approval, with a line in the repo's `CLAUDE.md`, under `## Issue tracker`:
+
+```markdown
+- Auto-apply: needs-investigation
+```
+
+| Step | Add | Why it comes then |
+|---|---|---|
+| 1 | `needs-investigation` | the reply is generic, and investigating only reads code. A new bug goes straight to the investigation, and you approve once, on what it found |
+| 2 | `needs-decision` | the reply only says a maintainer will decide |
+| 3 | `needs-info` | the reply asks the reporter things, so a wrong question costs them |
+| 4 | `ready`, `blocked`, `already-fixed` | the reply states a finding |
+| 5 | `duplicate`, `close` | it closes the issue on someone |
+
+- **An applied outcome is still on the record,** headed "Applied automatically: needs
+  investigation". A `🤖` answer to it overrules it, like any other answer.
+- **The `trust-report` route counts the record** each month: how often each outcome was
+  approved as proposed, changed, or overruled, and suggests the next step, or a step back.
+- **The routine never loosens its own rules.** A person edits the line.
+- **Security reports never get a write,** at any step.
+- **Shadow mode comes first,** before anything is posted at all.
 
 ## Claiming an issue
 
@@ -186,7 +214,7 @@ The skills run the same as in a chat, with two flags:
 
 - **`--unattended`:** no questions, and a clean stop when setup needs a person. A batch run takes
   at most 10 issues.
-- **`--via tracker`:** the approval happens on the issue. With no proposal yet, it proposes and
+- **`--via-tracker`:** the approval happens on the issue. With no proposal yet, it proposes and
   adds `state/drafted`, never the final state. With one, it reads the newest answer since, from
   someone with write access, and acts on it when it settles the outcome and the reply, or
   proposes again when it doesn't. Other new comments mean it proposes again with them.
